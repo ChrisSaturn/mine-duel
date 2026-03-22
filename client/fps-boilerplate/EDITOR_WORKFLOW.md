@@ -64,8 +64,8 @@ Mode behavior:
   "version": 1,
   "objects": [
     {
-      "id": "base-map-demo-scene",
-      "template": "demo-scene",
+      "id": "base-ground-001",
+      "template": "cube-world-ground",
       "position": [0, 0, 0],
       "rotation": [0, 0, 0],
       "scale": [1, 1, 1]
@@ -73,12 +73,16 @@ Mode behavior:
   ],
   "cameraPreset": {
     "localOffset": [0, 1.62, 0],
-    "pitchMin": -1.5708,
+    "pitchMin": -1.48353,
     "pitchMax": 1.5708,
     "fov": 70
   },
   "playerPreset": {
     "scale": 1
+  },
+  "spawnPreset": {
+    "position": [0, 0, 0],
+    "yaw": 0
   },
   "hitboxes": [
     {
@@ -96,7 +100,7 @@ Mode behavior:
       "rotation": [0, 0, 0],
       "radius": 0.5,
       "height": 1.2,
-      "attachToObjectId": "base-map-demo-scene",
+      "attachToObjectId": "base-ground-001",
       "layer": "solid"
     }
   ]
@@ -109,7 +113,7 @@ Mode behavior:
 - `applyMapData(scene, playerRig, colliders, options) -> runtimeState`
 - `mountEditor({ scene, camera, playerRig, colliders, mapData, ... })`
 - `serializeMapData() -> MapData`
-- World-object colliders come from explicit `userData.mapCollider=true` children when present; otherwise object bounds are used as fallback.
+- World-object colliders come from explicit `userData.mapCollider=true` children when present; otherwise runtime uses implicit mesh colliders from object meshes (with bounds fallback only when no mesh exists).
 
 ## Production Hardening
 

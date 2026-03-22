@@ -144,3 +144,47 @@ Execute and assert failures for:
   - join on already joined room
   - mine before VRF fulfillment
   - finalize before `Won`
+
+## Latest Live Devnet Smoke (Executed 2026-03-22)
+
+Program:
+- Program ID: `4b2q3K4cgr1P8FkjbcQ8nssDxLb9dhdVgVtrknvn5igJ`
+- Deploy/upgrade signature: `438oW572yf4FN9Qg4u7UgV5obwWTfCUwqRnQquSqWEJ3Kb6uZLSoBYu6dHwnUsy8ZACp9Fs3FtzhczJhijyyHny2`
+- Deployed slot: `450239064`
+
+Room used for successful smoke:
+- creator: `68wkqQoW6niMuu3W1mM5ivo6PD7HzAfD9LHnkQarsM4J`
+- player2: `2H1wZARcnhqVY5xuMxVzbkchu6aq1CNeFYK46NCexJMU`
+- room PDA: `HbWn871R1UACipCM875Q1SbRMTBGSUKMdCQSsCTNUHi8`
+
+Successful on-chain tx sequence:
+1. `create_room`  
+   `3D6H1fFqmGAss9pvZFY6z3iBp8qgCqERSCFddhbF5rS9HfLhQFcF58ciboqj4V1dDsEQH6FzhV6oW9t7YcKirSN4`
+2. `join_room`  
+   `5GK48q9ZYYNBNHxGK1iJvoP7AzNroFijvW6NCh7bEApniG1rrne9zNE7fHANoWwJ9VednHg6JQgTkXbYKXgcjbtQ`
+3. `delegate_private_state`  
+   `3UfdMdpCE8EXNPBppYDTrYVEqjyA2QF97E6uBrtcxZqiLPjLJzTetzXRYJYhN3kMRfRJSGSSSMkFXGd99ToJUEWM`
+
+One-shot fresh-room smoke (all three in one run):
+1. `create_room`  
+   `4F4Z7mNrSVTuw6WJbEgGcjRhw99JMjkDyrE1b42Pxt7xBWkvBq1s12uvvpeYqGSkC2BfeesQymVpJTQxNqr5Bb6v`
+2. `join_room`  
+   `ExcupybfySbFoKXrz9QEH3RetcjQNW4Ns5N8afH2nLJkLHWSpaWSxFKMEZDdVrVfzNBcq4PP1KUEUTHRTxPdm5G`
+3. `delegate_private_state`  
+   `2fmKG5SX9Dv6heDKmvJmXLsLGWpkH8aumkf58WpqGNyKEuzSSfSygFLCU54uXQp8Cv39nmUWffUyws9V3GbgSDEM`
+
+One-shot room owner checks:
+- room `36Sha...` owner -> `DELeGGvXpWV2fqJUhqcF5ZSYMS4JTLjteaAMARRSaeSh`
+- vault `HX7Jf...` owner -> `DELeGGvXpWV2fqJUhqcF5ZSYMS4JTLjteaAMARRSaeSh`
+
+Delegation verification (`solana account` owner checks):
+- room `HbWn...` owner -> `DELeGGvXpWV2fqJUhqcF5ZSYMS4JTLjteaAMARRSaeSh`
+- vault `Gzc6...` owner -> `DELeGGvXpWV2fqJUhqcF5ZSYMS4JTLjteaAMARRSaeSh`
+- winner `7ZC6...` owner -> `DELeGGvXpWV2fqJUhqcF5ZSYMS4JTLjteaAMARRSaeSh`
+- reveal1 `52hh...` owner -> `DELeGGvXpWV2fqJUhqcF5ZSYMS4JTLjteaAMARRSaeSh`
+- reveal2 `8poy...` owner -> `DELeGGvXpWV2fqJUhqcF5ZSYMS4JTLjteaAMARRSaeSh`
+
+Operational note:
+- `delegate_private_state` for 5 accounts exceeded default `200,000` compute units.
+- Smoke script now sends a compute-budget pre-instruction:
+  - `ComputeBudgetProgram.setComputeUnitLimit({ units: 1_200_000 })`

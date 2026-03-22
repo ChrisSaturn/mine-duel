@@ -3,6 +3,8 @@ import { TransformControls } from 'three/examples/jsm/controls/TransformControls
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import {
+  CAMERA_PRESET_PITCH_MAX_CEIL,
+  CAMERA_PRESET_PITCH_MIN_FLOOR,
   MAP_MANIFEST_VERSION,
   createHitboxMesh,
   normalizeMapData,
@@ -12,7 +14,17 @@ import {
 } from '../runtime/mapRuntime.js';
 
 const EDITOR_STYLE_ID = 'mine-duel-dev-editor-style';
-const PLAYER_PREVIEW_MODEL_PATH = '/models/characters/kenney-blocky/character-a.glb';
+
+function withBaseUrl(path) {
+  const baseUrl = typeof import.meta?.env?.BASE_URL === 'string'
+    ? import.meta.env.BASE_URL
+    : '/';
+  const normalizedBase = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
+  const normalizedPath = String(path || '').replace(/^\/+/, '');
+  return `${normalizedBase}${normalizedPath}`;
+}
+
+const PLAYER_PREVIEW_MODEL_PATH = withBaseUrl('models/characters/kenney-blocky/character-a.glb');
 
 function ensureEditorStyles() {
   if (document.getElementById(EDITOR_STYLE_ID)) {
@@ -750,15 +762,15 @@ export function mountEditor(context) {
     const playerScale = Number.isFinite(requestedPlayerScale) ? requestedPlayerScale : 1;
 
     if (!Number.isFinite(pitchMin)) {
-      pitchMin = -Math.PI / 2;
+      pitchMin = CAMERA_PRESET_PITCH_MIN_FLOOR;
     }
 
     if (!Number.isFinite(pitchMax)) {
-      pitchMax = Math.PI / 2;
+      pitchMax = CAMERA_PRESET_PITCH_MAX_CEIL;
     }
 
-    pitchMin = THREE.MathUtils.clamp(pitchMin, -Math.PI / 2, Math.PI / 2);
-    pitchMax = THREE.MathUtils.clamp(pitchMax, -Math.PI / 2, Math.PI / 2);
+    pitchMin = THREE.MathUtils.clamp(pitchMin, CAMERA_PRESET_PITCH_MIN_FLOOR, CAMERA_PRESET_PITCH_MAX_CEIL);
+    pitchMax = THREE.MathUtils.clamp(pitchMax, CAMERA_PRESET_PITCH_MIN_FLOOR, CAMERA_PRESET_PITCH_MAX_CEIL);
 
     if (pitchMin > pitchMax) {
       const temp = pitchMin;
@@ -1321,6 +1333,7 @@ export function mountEditor(context) {
       objects,
       cameraPreset: { ...workingMapData.cameraPreset },
       playerPreset: { ...workingMapData.playerPreset },
+      spawnPreset: { ...workingMapData.spawnPreset },
       hitboxes
     });
 

@@ -57,6 +57,7 @@ Last updated: 2026-03-22
   - Transitions room to `WaitingForVrf`.
 - `delegate_private_state()`
   - Delegates room, vault, winner state, and both reveal accounts for ER execution.
+  - Uses explicit delegation support accounts (`buffer_*`, `delegation_record_*`, `delegation_metadata_*`) and validates all expected PDAs before CPI.
 - `request_winner_vrf(client_seed)`
   - Requests VRF once player two has joined.
   - Registers callback to `consume_winner_vrf`.
@@ -105,3 +106,4 @@ Last updated: 2026-03-22
 - One room PDA namespace per creator seed (`["room", creator]`).
 - No post-join timeout/recovery path.
 - Checkpoint commits are hash/metadata focused, while private reveal/winner internals stay in delegated private state.
+- Delegating all 5 private-state accounts in one instruction requires elevated compute budget on the client tx (the default 200k CU is insufficient on devnet).

@@ -13,7 +13,7 @@
     <div id="app">
       <div id="hud">
         <h1>MINE-DUEL FPS Boilerplate</h1>
-        <p>Click to play. Move: WASD or Arrows. Run: SHIFT. Jump: SPACE.</p>
+        <p>Click to play. Move: WASD/Arrows. Sprint: Shift. Jump: Space. Crouch: C/Ctrl. Zoom: RMB.</p>
         <p id="fps">FPS: <span id="fps-value">--</span></p>
         <section id="wallet-panel" aria-label="Solana wallet connector">
           <label class="wallet-field">
@@ -35,11 +35,16 @@
         <span class="crosshair-line crosshair-line--vertical"></span>
         <span class="crosshair-dot"></span>
       </div>
+      <div id="sprint-bar" aria-hidden="true">
+        <div id="sprint-bar-bg">
+          <div id="sprint-bar-fill"></div>
+        </div>
+      </div>
 
       <div id="blocker">
         <div id="instructions" role="button" tabindex="0" aria-label="Click to play">
           <strong>Click To Play</strong>
-          <span>Look: Mouse | Move: WASD/Arrows | Run: Shift | Jump: Space</span>
+          <span>Look: Mouse | Move: WASD/Arrows | Sprint: Shift | Crouch: C/Ctrl | Zoom: RMB | Jump: Space</span>
         </div>
       </div>
     </div>

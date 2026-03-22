@@ -305,6 +305,7 @@ Recommendation:
 - Not verifying TEE integrity before requesting PER auth token.
 - Forgetting to append `?token=...` to TEE RPC URL.
 - Delegating permissioned account but not permission account (PER access fails).
+- Multi-account delegation can exceed default `200,000` CU; include `ComputeBudgetProgram.setComputeUnitLimit(...)` on the delegation tx.
 
 ## 6) Project docs chain
 

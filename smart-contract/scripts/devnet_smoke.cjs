@@ -2,10 +2,11 @@ const fs = require('fs');
 const path = require('path');
 const anchor = require('@coral-xyz/anchor');
 
-const { PublicKey, Keypair, SystemProgram, Connection } = anchor.web3;
+const { PublicKey, Keypair, SystemProgram, Connection, ComputeBudgetProgram } = anchor.web3;
 
 const RPC_URL = 'https://api.devnet.solana.com';
 const COMMITMENT = 'confirmed';
+const DELEGATION_PROGRAM = new PublicKey('DELeGGvXpWV2fqJUhqcF5ZSYMS4JTLjteaAMARRSaeSh');
 const TEE_VALIDATOR = new PublicKey('FnE6VJT5QNZdedZPnCoLsARgBwoE6DeJNjBs2H1gySXA');
 const STAKE_LAMPORTS = Number(process.env.STAKE_LAMPORTS || 50_000_000); // default 0.05 SOL
 
@@ -17,6 +18,18 @@ function readKeypair(relPath) {
 
 function pda(seeds, programId) {
   return PublicKey.findProgramAddressSync(seeds, programId)[0];
+}
+
+function delegationBufferPda(target, ownerProgramId) {
+  return pda([Buffer.from('buffer'), target.toBuffer()], ownerProgramId);
+}
+
+function delegationRecordPda(target) {
+  return pda([Buffer.from('delegation'), target.toBuffer()], DELEGATION_PROGRAM);
+}
+
+function delegationMetadataPda(target) {
+  return pda([Buffer.from('delegation-metadata'), target.toBuffer()], DELEGATION_PROGRAM);
 }
 
 function enumKey(v) {
@@ -61,6 +74,21 @@ async function main() {
   const winnerState = pda([Buffer.from('winner'), room.toBuffer()], programId);
   const playerOneReveal = pda([Buffer.from('reveal'), room.toBuffer(), creatorPk.toBuffer()], programId);
   const playerTwoReveal = pda([Buffer.from('reveal'), room.toBuffer(), player2Pk.toBuffer()], programId);
+  const bufferRoom = delegationBufferPda(room, programId);
+  const delegationRecordRoom = delegationRecordPda(room);
+  const delegationMetadataRoom = delegationMetadataPda(room);
+  const bufferVault = delegationBufferPda(vault, programId);
+  const delegationRecordVault = delegationRecordPda(vault);
+  const delegationMetadataVault = delegationMetadataPda(vault);
+  const bufferWinnerState = delegationBufferPda(winnerState, programId);
+  const delegationRecordWinnerState = delegationRecordPda(winnerState);
+  const delegationMetadataWinnerState = delegationMetadataPda(winnerState);
+  const bufferPlayerOneReveal = delegationBufferPda(playerOneReveal, programId);
+  const delegationRecordPlayerOneReveal = delegationRecordPda(playerOneReveal);
+  const delegationMetadataPlayerOneReveal = delegationMetadataPda(playerOneReveal);
+  const bufferPlayerTwoReveal = delegationBufferPda(playerTwoReveal, programId);
+  const delegationRecordPlayerTwoReveal = delegationRecordPda(playerTwoReveal);
+  const delegationMetadataPlayerTwoReveal = delegationMetadataPda(playerTwoReveal);
 
   console.log('Program:', programId.toBase58());
   console.log('Creator keyfile:', creatorPath);
@@ -71,64 +99,70 @@ async function main() {
   console.log('Vault PDA:', vault.toBase58());
 
   const existing = await connection.getAccountInfo(room, COMMITMENT);
+  let didCreateJoin = false;
   if (existing) {
     const st = await programCreator.account.roomShared.fetch(room);
     const status = enumKey(st.status);
     console.log(`Existing room status: ${status}`);
     if (status === 'waitingForOpponent') {
-      const cancelSig = await programCreator.methods
-        .cancelRoomPrejoin()
+      const joinSig = await programP2.methods
+        .joinRoom()
         .accounts({
-          creator: creatorPk,
+          player: player2Pk,
           room,
           vault,
           winnerState,
-          playerOneReveal,
+          playerTwoReveal,
+          systemProgram: SystemProgram.programId,
         })
         .rpc();
-      console.log('cancel_room_prejoin tx:', cancelSig);
+      console.log('join_room tx:', joinSig);
+      didCreateJoin = true;
+    } else if (status === 'waitingForVrf' || status === 'active') {
+      console.log('Reusing existing room for delegation smoke step.');
     } else {
       throw new Error(`Room already exists in non-resettable state (${status}). Use a fresh creator wallet for smoke run.`);
     }
+  } else {
+    const createSig = await programCreator.methods
+      .createRoom(new anchor.BN(STAKE_LAMPORTS))
+      .accounts({
+        creator: creatorPk,
+        room,
+        vault,
+        winnerState,
+        playerOneReveal,
+        systemProgram: SystemProgram.programId,
+      })
+      .rpc();
+    console.log('create_room tx:', createSig);
+
+    const afterCreate = await programCreator.account.roomShared.fetch(room);
+    console.log('status after create:', enumKey(afterCreate.status));
+    console.log('escrow after create (lamports):', afterCreate.totalEscrowLamports.toString());
+
+    const joinSig = await programP2.methods
+      .joinRoom()
+      .accounts({
+        player: player2Pk,
+        room,
+        vault,
+        winnerState,
+        playerTwoReveal,
+        systemProgram: SystemProgram.programId,
+      })
+      .rpc();
+    console.log('join_room tx:', joinSig);
+    didCreateJoin = true;
   }
 
   const creatorStart = await getBalance(connection, creatorPk);
   const p2Start = await getBalance(connection, player2Pk);
 
-  const createSig = await programCreator.methods
-    .createRoom(new anchor.BN(STAKE_LAMPORTS))
-    .accounts({
-      creator: creatorPk,
-      room,
-      vault,
-      winnerState,
-      playerOneReveal,
-      systemProgram: SystemProgram.programId,
-    })
-    .rpc();
-  console.log('create_room tx:', createSig);
-
-  const afterCreate = await programCreator.account.roomShared.fetch(room);
-  console.log('status after create:', enumKey(afterCreate.status));
-  console.log('escrow after create (lamports):', afterCreate.totalEscrowLamports.toString());
-
-  const joinSig = await programP2.methods
-    .joinRoom()
-    .accounts({
-      player: player2Pk,
-      room,
-      vault,
-      winnerState,
-      playerTwoReveal,
-      systemProgram: SystemProgram.programId,
-    })
-    .rpc();
-  console.log('join_room tx:', joinSig);
-
   const afterJoin = await programCreator.account.roomShared.fetch(room);
-  console.log('status after join:', enumKey(afterJoin.status));
+  console.log('status pre-delegate:', enumKey(afterJoin.status));
   console.log('player_two:', afterJoin.playerTwo.toBase58());
-  console.log('escrow after join (lamports):', afterJoin.totalEscrowLamports.toString());
+  console.log('escrow pre-delegate (lamports):', afterJoin.totalEscrowLamports.toString());
 
   try {
     const delegateSig = await programCreator.methods
@@ -144,7 +178,28 @@ async function main() {
         winnerState,
         playerOneReveal,
         playerTwoReveal,
+        ownerProgram: programId,
+        delegationProgram: DELEGATION_PROGRAM,
+        systemProgram: SystemProgram.programId,
+        bufferRoom,
+        delegationRecordRoom,
+        delegationMetadataRoom,
+        bufferVault,
+        delegationRecordVault,
+        delegationMetadataVault,
+        bufferWinnerState,
+        delegationRecordWinnerState,
+        delegationMetadataWinnerState,
+        bufferPlayerOneReveal,
+        delegationRecordPlayerOneReveal,
+        delegationMetadataPlayerOneReveal,
+        bufferPlayerTwoReveal,
+        delegationRecordPlayerTwoReveal,
+        delegationMetadataPlayerTwoReveal,
       })
+      .preInstructions([
+        ComputeBudgetProgram.setComputeUnitLimit({ units: 1_200_000 }),
+      ])
       .rpc();
     console.log('delegate_private_state tx:', delegateSig);
   } catch (e) {
@@ -161,6 +216,7 @@ async function main() {
   console.log('balances SOL:');
   console.log('creator start/end:', creatorStart, creatorEnd);
   console.log('player2 start/end:', p2Start, p2End);
+  console.log('create+join this run:', didCreateJoin);
   console.log('Smoke flow complete.');
 }
 

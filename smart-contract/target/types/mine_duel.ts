@@ -420,137 +420,6 @@ export type MineDuel = {
           "optional": true
         },
         {
-          "name": "bufferRoom",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  98,
-                  117,
-                  102,
-                  102,
-                  101,
-                  114
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "room"
-              }
-            ],
-            "program": {
-              "kind": "const",
-              "value": [
-                53,
-                74,
-                224,
-                34,
-                67,
-                171,
-                15,
-                33,
-                254,
-                180,
-                170,
-                101,
-                178,
-                169,
-                134,
-                15,
-                36,
-                197,
-                102,
-                148,
-                140,
-                118,
-                37,
-                188,
-                70,
-                221,
-                248,
-                241,
-                16,
-                218,
-                85,
-                251
-              ]
-            }
-          }
-        },
-        {
-          "name": "delegationRecordRoom",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  100,
-                  101,
-                  108,
-                  101,
-                  103,
-                  97,
-                  116,
-                  105,
-                  111,
-                  110
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "room"
-              }
-            ],
-            "program": {
-              "kind": "account",
-              "path": "delegationProgram"
-            }
-          }
-        },
-        {
-          "name": "delegationMetadataRoom",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  100,
-                  101,
-                  108,
-                  101,
-                  103,
-                  97,
-                  116,
-                  105,
-                  111,
-                  110,
-                  45,
-                  109,
-                  101,
-                  116,
-                  97,
-                  100,
-                  97,
-                  116,
-                  97
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "room"
-              }
-            ],
-            "program": {
-              "kind": "account",
-              "path": "delegationProgram"
-            }
-          }
-        },
-        {
           "name": "room",
           "writable": true,
           "pda": {
@@ -572,627 +441,20 @@ export type MineDuel = {
           }
         },
         {
-          "name": "bufferVault",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  98,
-                  117,
-                  102,
-                  102,
-                  101,
-                  114
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "vault"
-              }
-            ],
-            "program": {
-              "kind": "const",
-              "value": [
-                53,
-                74,
-                224,
-                34,
-                67,
-                171,
-                15,
-                33,
-                254,
-                180,
-                170,
-                101,
-                178,
-                169,
-                134,
-                15,
-                36,
-                197,
-                102,
-                148,
-                140,
-                118,
-                37,
-                188,
-                70,
-                221,
-                248,
-                241,
-                16,
-                218,
-                85,
-                251
-              ]
-            }
-          }
-        },
-        {
-          "name": "delegationRecordVault",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  100,
-                  101,
-                  108,
-                  101,
-                  103,
-                  97,
-                  116,
-                  105,
-                  111,
-                  110
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "vault"
-              }
-            ],
-            "program": {
-              "kind": "account",
-              "path": "delegationProgram"
-            }
-          }
-        },
-        {
-          "name": "delegationMetadataVault",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  100,
-                  101,
-                  108,
-                  101,
-                  103,
-                  97,
-                  116,
-                  105,
-                  111,
-                  110,
-                  45,
-                  109,
-                  101,
-                  116,
-                  97,
-                  100,
-                  97,
-                  116,
-                  97
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "vault"
-              }
-            ],
-            "program": {
-              "kind": "account",
-              "path": "delegationProgram"
-            }
-          }
-        },
-        {
           "name": "vault",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  118,
-                  97,
-                  117,
-                  108,
-                  116
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "room"
-              }
-            ]
-          }
-        },
-        {
-          "name": "bufferWinnerState",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  98,
-                  117,
-                  102,
-                  102,
-                  101,
-                  114
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "winnerState"
-              }
-            ],
-            "program": {
-              "kind": "const",
-              "value": [
-                53,
-                74,
-                224,
-                34,
-                67,
-                171,
-                15,
-                33,
-                254,
-                180,
-                170,
-                101,
-                178,
-                169,
-                134,
-                15,
-                36,
-                197,
-                102,
-                148,
-                140,
-                118,
-                37,
-                188,
-                70,
-                221,
-                248,
-                241,
-                16,
-                218,
-                85,
-                251
-              ]
-            }
-          }
-        },
-        {
-          "name": "delegationRecordWinnerState",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  100,
-                  101,
-                  108,
-                  101,
-                  103,
-                  97,
-                  116,
-                  105,
-                  111,
-                  110
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "winnerState"
-              }
-            ],
-            "program": {
-              "kind": "account",
-              "path": "delegationProgram"
-            }
-          }
-        },
-        {
-          "name": "delegationMetadataWinnerState",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  100,
-                  101,
-                  108,
-                  101,
-                  103,
-                  97,
-                  116,
-                  105,
-                  111,
-                  110,
-                  45,
-                  109,
-                  101,
-                  116,
-                  97,
-                  100,
-                  97,
-                  116,
-                  97
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "winnerState"
-              }
-            ],
-            "program": {
-              "kind": "account",
-              "path": "delegationProgram"
-            }
-          }
+          "writable": true
         },
         {
           "name": "winnerState",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  119,
-                  105,
-                  110,
-                  110,
-                  101,
-                  114
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "room"
-              }
-            ]
-          }
-        },
-        {
-          "name": "bufferPlayerOneReveal",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  98,
-                  117,
-                  102,
-                  102,
-                  101,
-                  114
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "playerOneReveal"
-              }
-            ],
-            "program": {
-              "kind": "const",
-              "value": [
-                53,
-                74,
-                224,
-                34,
-                67,
-                171,
-                15,
-                33,
-                254,
-                180,
-                170,
-                101,
-                178,
-                169,
-                134,
-                15,
-                36,
-                197,
-                102,
-                148,
-                140,
-                118,
-                37,
-                188,
-                70,
-                221,
-                248,
-                241,
-                16,
-                218,
-                85,
-                251
-              ]
-            }
-          }
-        },
-        {
-          "name": "delegationRecordPlayerOneReveal",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  100,
-                  101,
-                  108,
-                  101,
-                  103,
-                  97,
-                  116,
-                  105,
-                  111,
-                  110
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "playerOneReveal"
-              }
-            ],
-            "program": {
-              "kind": "account",
-              "path": "delegationProgram"
-            }
-          }
-        },
-        {
-          "name": "delegationMetadataPlayerOneReveal",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  100,
-                  101,
-                  108,
-                  101,
-                  103,
-                  97,
-                  116,
-                  105,
-                  111,
-                  110,
-                  45,
-                  109,
-                  101,
-                  116,
-                  97,
-                  100,
-                  97,
-                  116,
-                  97
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "playerOneReveal"
-              }
-            ],
-            "program": {
-              "kind": "account",
-              "path": "delegationProgram"
-            }
-          }
+          "writable": true
         },
         {
           "name": "playerOneReveal",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  114,
-                  101,
-                  118,
-                  101,
-                  97,
-                  108
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "room"
-              },
-              {
-                "kind": "account",
-                "path": "playerOne"
-              }
-            ]
-          }
-        },
-        {
-          "name": "bufferPlayerTwoReveal",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  98,
-                  117,
-                  102,
-                  102,
-                  101,
-                  114
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "playerTwoReveal"
-              }
-            ],
-            "program": {
-              "kind": "const",
-              "value": [
-                53,
-                74,
-                224,
-                34,
-                67,
-                171,
-                15,
-                33,
-                254,
-                180,
-                170,
-                101,
-                178,
-                169,
-                134,
-                15,
-                36,
-                197,
-                102,
-                148,
-                140,
-                118,
-                37,
-                188,
-                70,
-                221,
-                248,
-                241,
-                16,
-                218,
-                85,
-                251
-              ]
-            }
-          }
-        },
-        {
-          "name": "delegationRecordPlayerTwoReveal",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  100,
-                  101,
-                  108,
-                  101,
-                  103,
-                  97,
-                  116,
-                  105,
-                  111,
-                  110
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "playerTwoReveal"
-              }
-            ],
-            "program": {
-              "kind": "account",
-              "path": "delegationProgram"
-            }
-          }
-        },
-        {
-          "name": "delegationMetadataPlayerTwoReveal",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  100,
-                  101,
-                  108,
-                  101,
-                  103,
-                  97,
-                  116,
-                  105,
-                  111,
-                  110,
-                  45,
-                  109,
-                  101,
-                  116,
-                  97,
-                  100,
-                  97,
-                  116,
-                  97
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "playerTwoReveal"
-              }
-            ],
-            "program": {
-              "kind": "account",
-              "path": "delegationProgram"
-            }
-          }
+          "writable": true
         },
         {
           "name": "playerTwoReveal",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  114,
-                  101,
-                  118,
-                  101,
-                  97,
-                  108
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "room"
-              },
-              {
-                "kind": "account",
-                "path": "playerTwo"
-              }
-            ]
-          }
+          "writable": true
         },
         {
           "name": "ownerProgram",
@@ -1205,6 +467,66 @@ export type MineDuel = {
         {
           "name": "systemProgram",
           "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "bufferRoom",
+          "writable": true
+        },
+        {
+          "name": "delegationRecordRoom",
+          "writable": true
+        },
+        {
+          "name": "delegationMetadataRoom",
+          "writable": true
+        },
+        {
+          "name": "bufferVault",
+          "writable": true
+        },
+        {
+          "name": "delegationRecordVault",
+          "writable": true
+        },
+        {
+          "name": "delegationMetadataVault",
+          "writable": true
+        },
+        {
+          "name": "bufferWinnerState",
+          "writable": true
+        },
+        {
+          "name": "delegationRecordWinnerState",
+          "writable": true
+        },
+        {
+          "name": "delegationMetadataWinnerState",
+          "writable": true
+        },
+        {
+          "name": "bufferPlayerOneReveal",
+          "writable": true
+        },
+        {
+          "name": "delegationRecordPlayerOneReveal",
+          "writable": true
+        },
+        {
+          "name": "delegationMetadataPlayerOneReveal",
+          "writable": true
+        },
+        {
+          "name": "bufferPlayerTwoReveal",
+          "writable": true
+        },
+        {
+          "name": "delegationRecordPlayerTwoReveal",
+          "writable": true
+        },
+        {
+          "name": "delegationMetadataPlayerTwoReveal",
+          "writable": true
         }
       ],
       "args": []
@@ -1273,82 +595,15 @@ export type MineDuel = {
         },
         {
           "name": "winnerState",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  119,
-                  105,
-                  110,
-                  110,
-                  101,
-                  114
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "room"
-              }
-            ]
-          }
+          "writable": true
         },
         {
           "name": "playerOneReveal",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  114,
-                  101,
-                  118,
-                  101,
-                  97,
-                  108
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "room"
-              },
-              {
-                "kind": "account",
-                "path": "room.player_one",
-                "account": "roomShared"
-              }
-            ]
-          }
+          "writable": true
         },
         {
           "name": "playerTwoReveal",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  114,
-                  101,
-                  118,
-                  101,
-                  97,
-                  108
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "room"
-              },
-              {
-                "kind": "account",
-                "path": "room.player_two",
-                "account": "roomShared"
-              }
-            ]
-          }
+          "writable": true
         },
         {
           "name": "magicProgram",
@@ -1888,6 +1143,16 @@ export type MineDuel = {
       "code": 6010,
       "name": "invalidSessionToken",
       "msg": "Invalid or expired session token."
+    },
+    {
+      "code": 6011,
+      "name": "invalidDelegateAccounts",
+      "msg": "Invalid delegation support account set."
+    },
+    {
+      "code": 6012,
+      "name": "invalidFinalizeAccounts",
+      "msg": "Invalid finalize account set."
     }
   ],
   "types": [

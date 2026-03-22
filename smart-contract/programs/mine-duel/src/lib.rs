@@ -1,10 +1,13 @@
 use anchor_lang::prelude::*;
 use anchor_lang::system_program::{transfer, Transfer};
-use ephemeral_rollups_sdk::anchor::{commit, delegate, ephemeral};
-use ephemeral_rollups_sdk::cpi::DelegateConfig;
+use ephemeral_rollups_sdk::anchor::{commit, ephemeral};
+use ephemeral_rollups_sdk::cpi::{
+    delegate_account, DelegateAccounts, DelegateConfig, DELEGATION_PROGRAM_ID,
+};
 use ephemeral_rollups_sdk::ephem::{commit_accounts, commit_and_undelegate_accounts};
-use ephemeral_vrf_sdk::anchor::vrf;
-use ephemeral_vrf_sdk::instructions::{create_request_randomness_ix, RequestRandomnessParams};
+use ephemeral_vrf_sdk::instructions::{
+    create_request_regular_randomness_ix, RequestRandomnessParams,
+};
 use ephemeral_vrf_sdk::types::SerializableAccountMeta;
 use session_keys::SessionToken;
 
@@ -142,11 +145,7 @@ pub mod mine_duel {
     }
 
     pub fn delegate_private_state(ctx: Context<DelegatePrivateState>) -> Result<()> {
-        let room_state = {
-            let room_data = ctx.accounts.room.try_borrow_data()?;
-            let mut room_data_slice: &[u8] = &room_data;
-            RoomShared::try_deserialize(&mut room_data_slice)?
-        };
+        let room_state = &ctx.accounts.room;
         require!(
             room_state.status == RoomStatus::WaitingForVrf
                 || room_state.status == RoomStatus::Active,
@@ -172,61 +171,184 @@ pub mod mine_duel {
             ctx.accounts.player_two.key(),
             MineDuelError::Unauthorized
         );
+        require_keys_eq!(
+            ctx.accounts.owner_program.key(),
+            ID,
+            MineDuelError::InvalidDelegateAccounts
+        );
+        require_keys_eq!(
+            ctx.accounts.delegation_program.key(),
+            DELEGATION_PROGRAM_ID,
+            MineDuelError::InvalidDelegateAccounts
+        );
 
         let maybe_validator = ctx.accounts.validator.as_ref().map(|v| v.key());
         let room_key = ctx.accounts.room.key();
+        let owner_program_id = ctx.accounts.owner_program.key();
+        let delegation_program_id = ctx.accounts.delegation_program.key();
 
-        ctx.accounts.delegate_room(
-            &ctx.accounts.payer,
+        let expected_vault = Pubkey::find_program_address(&[SEED_VAULT, room_key.as_ref()], &ID).0;
+        let expected_winner =
+            Pubkey::find_program_address(&[SEED_WINNER, room_key.as_ref()], &ID).0;
+        let expected_p1_reveal = Pubkey::find_program_address(
+            &[SEED_REVEAL, room_key.as_ref(), room_state.player_one.as_ref()],
+            &ID,
+        )
+        .0;
+        let expected_p2_reveal = Pubkey::find_program_address(
+            &[SEED_REVEAL, room_key.as_ref(), room_state.player_two.as_ref()],
+            &ID,
+        )
+        .0;
+        require_keys_eq!(
+            ctx.accounts.vault.key(),
+            expected_vault,
+            MineDuelError::InvalidDelegateAccounts
+        );
+        require_keys_eq!(
+            ctx.accounts.winner_state.key(),
+            expected_winner,
+            MineDuelError::InvalidDelegateAccounts
+        );
+        require_keys_eq!(
+            ctx.accounts.player_one_reveal.key(),
+            expected_p1_reveal,
+            MineDuelError::InvalidDelegateAccounts
+        );
+        require_keys_eq!(
+            ctx.accounts.player_two_reveal.key(),
+            expected_p2_reveal,
+            MineDuelError::InvalidDelegateAccounts
+        );
+
+        verify_delegate_aux_accounts(
+            &ctx.accounts.room.to_account_info(),
+            &ctx.accounts.buffer_room.to_account_info(),
+            &ctx.accounts.delegation_record_room.to_account_info(),
+            &ctx.accounts.delegation_metadata_room.to_account_info(),
+            owner_program_id,
+            delegation_program_id,
+        )?;
+        verify_delegate_aux_accounts(
+            &ctx.accounts.vault.to_account_info(),
+            &ctx.accounts.buffer_vault.to_account_info(),
+            &ctx.accounts.delegation_record_vault.to_account_info(),
+            &ctx.accounts.delegation_metadata_vault.to_account_info(),
+            owner_program_id,
+            delegation_program_id,
+        )?;
+        verify_delegate_aux_accounts(
+            &ctx.accounts.winner_state.to_account_info(),
+            &ctx.accounts.buffer_winner_state.to_account_info(),
+            &ctx.accounts.delegation_record_winner_state.to_account_info(),
+            &ctx.accounts.delegation_metadata_winner_state.to_account_info(),
+            owner_program_id,
+            delegation_program_id,
+        )?;
+        verify_delegate_aux_accounts(
+            &ctx.accounts.player_one_reveal.to_account_info(),
+            &ctx.accounts.buffer_player_one_reveal.to_account_info(),
+            &ctx.accounts
+                .delegation_record_player_one_reveal
+                .to_account_info(),
+            &ctx.accounts
+                .delegation_metadata_player_one_reveal
+                .to_account_info(),
+            owner_program_id,
+            delegation_program_id,
+        )?;
+        verify_delegate_aux_accounts(
+            &ctx.accounts.player_two_reveal.to_account_info(),
+            &ctx.accounts.buffer_player_two_reveal.to_account_info(),
+            &ctx.accounts
+                .delegation_record_player_two_reveal
+                .to_account_info(),
+            &ctx.accounts
+                .delegation_metadata_player_two_reveal
+                .to_account_info(),
+            owner_program_id,
+            delegation_program_id,
+        )?;
+
+        delegate_one(
+            &ctx.accounts.payer.to_account_info(),
+            &ctx.accounts.owner_program.to_account_info(),
+            &ctx.accounts.delegation_program.to_account_info(),
+            &ctx.accounts.system_program.to_account_info(),
+            &ctx.accounts.room.to_account_info(),
+            &ctx.accounts.buffer_room.to_account_info(),
+            &ctx.accounts.delegation_record_room.to_account_info(),
+            &ctx.accounts.delegation_metadata_room.to_account_info(),
             &[SEED_ROOM, room_state.creator.as_ref()],
-            DelegateConfig {
-                validator: maybe_validator,
-                ..Default::default()
-            },
+            maybe_validator,
         )?;
 
-        ctx.accounts.delegate_vault(
-            &ctx.accounts.payer,
+        delegate_one(
+            &ctx.accounts.payer.to_account_info(),
+            &ctx.accounts.owner_program.to_account_info(),
+            &ctx.accounts.delegation_program.to_account_info(),
+            &ctx.accounts.system_program.to_account_info(),
+            &ctx.accounts.vault.to_account_info(),
+            &ctx.accounts.buffer_vault.to_account_info(),
+            &ctx.accounts.delegation_record_vault.to_account_info(),
+            &ctx.accounts.delegation_metadata_vault.to_account_info(),
             &[SEED_VAULT, room_key.as_ref()],
-            DelegateConfig {
-                validator: maybe_validator,
-                ..Default::default()
-            },
+            maybe_validator,
         )?;
 
-        ctx.accounts.delegate_winner_state(
-            &ctx.accounts.payer,
+        delegate_one(
+            &ctx.accounts.payer.to_account_info(),
+            &ctx.accounts.owner_program.to_account_info(),
+            &ctx.accounts.delegation_program.to_account_info(),
+            &ctx.accounts.system_program.to_account_info(),
+            &ctx.accounts.winner_state.to_account_info(),
+            &ctx.accounts.buffer_winner_state.to_account_info(),
+            &ctx.accounts.delegation_record_winner_state.to_account_info(),
+            &ctx.accounts.delegation_metadata_winner_state.to_account_info(),
             &[SEED_WINNER, room_key.as_ref()],
-            DelegateConfig {
-                validator: maybe_validator,
-                ..Default::default()
-            },
+            maybe_validator,
         )?;
 
-        ctx.accounts.delegate_player_one_reveal(
-            &ctx.accounts.payer,
+        delegate_one(
+            &ctx.accounts.payer.to_account_info(),
+            &ctx.accounts.owner_program.to_account_info(),
+            &ctx.accounts.delegation_program.to_account_info(),
+            &ctx.accounts.system_program.to_account_info(),
+            &ctx.accounts.player_one_reveal.to_account_info(),
+            &ctx.accounts.buffer_player_one_reveal.to_account_info(),
+            &ctx.accounts
+                .delegation_record_player_one_reveal
+                .to_account_info(),
+            &ctx.accounts
+                .delegation_metadata_player_one_reveal
+                .to_account_info(),
             &[
                 SEED_REVEAL,
                 room_key.as_ref(),
                 room_state.player_one.as_ref(),
             ],
-            DelegateConfig {
-                validator: maybe_validator,
-                ..Default::default()
-            },
+            maybe_validator,
         )?;
 
-        ctx.accounts.delegate_player_two_reveal(
-            &ctx.accounts.payer,
+        delegate_one(
+            &ctx.accounts.payer.to_account_info(),
+            &ctx.accounts.owner_program.to_account_info(),
+            &ctx.accounts.delegation_program.to_account_info(),
+            &ctx.accounts.system_program.to_account_info(),
+            &ctx.accounts.player_two_reveal.to_account_info(),
+            &ctx.accounts.buffer_player_two_reveal.to_account_info(),
+            &ctx.accounts
+                .delegation_record_player_two_reveal
+                .to_account_info(),
+            &ctx.accounts
+                .delegation_metadata_player_two_reveal
+                .to_account_info(),
             &[
                 SEED_REVEAL,
                 room_key.as_ref(),
                 room_state.player_two.as_ref(),
             ],
-            DelegateConfig {
-                validator: maybe_validator,
-                ..Default::default()
-            },
+            maybe_validator,
         )?;
 
         Ok(())
@@ -251,7 +373,7 @@ pub mod mine_duel {
             );
         }
 
-        let request_ix = create_request_randomness_ix(RequestRandomnessParams {
+        let request_ix = create_request_regular_randomness_ix(RequestRandomnessParams {
             payer: ctx.accounts.payer.key(),
             oracle_queue: ctx.accounts.oracle_queue.key(),
             callback_program_id: ID,
@@ -402,6 +524,35 @@ pub mod mine_duel {
         );
         require!(room.total_escrow_lamports > 0, MineDuelError::InvalidStatus);
 
+        let room_key = room.key();
+        let expected_winner_state =
+            Pubkey::find_program_address(&[SEED_WINNER, room_key.as_ref()], &ID).0;
+        let expected_p1_reveal = Pubkey::find_program_address(
+            &[SEED_REVEAL, room_key.as_ref(), room.player_one.as_ref()],
+            &ID,
+        )
+        .0;
+        let expected_p2_reveal = Pubkey::find_program_address(
+            &[SEED_REVEAL, room_key.as_ref(), room.player_two.as_ref()],
+            &ID,
+        )
+        .0;
+        require_keys_eq!(
+            ctx.accounts.winner_state.key(),
+            expected_winner_state,
+            MineDuelError::InvalidFinalizeAccounts
+        );
+        require_keys_eq!(
+            ctx.accounts.player_one_reveal.key(),
+            expected_p1_reveal,
+            MineDuelError::InvalidFinalizeAccounts
+        );
+        require_keys_eq!(
+            ctx.accounts.player_two_reveal.key(),
+            expected_p2_reveal,
+            MineDuelError::InvalidFinalizeAccounts
+        );
+
         let payout = room.total_escrow_lamports;
         let new_vault_lamports = vault_info
             .lamports()
@@ -424,9 +575,9 @@ pub mod mine_duel {
             vec![
                 &ctx.accounts.room.to_account_info(),
                 &ctx.accounts.vault.to_account_info(),
-                &ctx.accounts.winner_state.to_account_info(),
-                &ctx.accounts.player_one_reveal.to_account_info(),
-                &ctx.accounts.player_two_reveal.to_account_info(),
+                &ctx.accounts.winner_state,
+                &ctx.accounts.player_one_reveal,
+                &ctx.accounts.player_two_reveal,
             ],
             &ctx.accounts.magic_context,
             &ctx.accounts.magic_program,
@@ -542,7 +693,6 @@ pub struct JoinRoom<'info> {
     pub system_program: Program<'info, System>,
 }
 
-#[delegate]
 #[derive(Accounts)]
 pub struct DelegatePrivateState<'info> {
     #[account(mut)]
@@ -554,50 +704,79 @@ pub struct DelegatePrivateState<'info> {
     /// CHECK: player two key used as PDA seed authority check input.
     pub player_two: UncheckedAccount<'info>,
     /// CHECK: Optional target validator for delegation.
-    pub validator: Option<AccountInfo<'info>>,
-    /// CHECK: Delegated shared room state.
+    pub validator: Option<UncheckedAccount<'info>>,
     #[account(
         mut,
-        del,
         seeds = [SEED_ROOM, room_creator.key().as_ref()],
-        bump
+        bump = room.bump
     )]
-    pub room: AccountInfo<'info>,
+    pub room: Account<'info, RoomShared>,
     /// CHECK: Delegated escrow account.
-    #[account(
-        mut,
-        del,
-        seeds = [SEED_VAULT, room.key().as_ref()],
-        bump
-    )]
-    pub vault: AccountInfo<'info>,
+    #[account(mut)]
+    pub vault: UncheckedAccount<'info>,
     /// CHECK: Delegated private winner state.
-    #[account(
-        mut,
-        del,
-        seeds = [SEED_WINNER, room.key().as_ref()],
-        bump
-    )]
-    pub winner_state: AccountInfo<'info>,
+    #[account(mut)]
+    pub winner_state: UncheckedAccount<'info>,
     /// CHECK: Delegated private reveal map for player one.
-    #[account(
-        mut,
-        del,
-        seeds = [SEED_REVEAL, room.key().as_ref(), player_one.key().as_ref()],
-        bump
-    )]
-    pub player_one_reveal: AccountInfo<'info>,
+    #[account(mut)]
+    pub player_one_reveal: UncheckedAccount<'info>,
     /// CHECK: Delegated private reveal map for player two.
-    #[account(
-        mut,
-        del,
-        seeds = [SEED_REVEAL, room.key().as_ref(), player_two.key().as_ref()],
-        bump
-    )]
-    pub player_two_reveal: AccountInfo<'info>,
+    #[account(mut)]
+    pub player_two_reveal: UncheckedAccount<'info>,
+    /// CHECK: Must be this program id.
+    #[account(address = ID)]
+    pub owner_program: UncheckedAccount<'info>,
+    /// CHECK: Must be MagicBlock delegation program.
+    #[account(address = DELEGATION_PROGRAM_ID)]
+    pub delegation_program: UncheckedAccount<'info>,
+    pub system_program: Program<'info, System>,
+    /// CHECK: Buffer PDA for room delegation.
+    #[account(mut)]
+    pub buffer_room: UncheckedAccount<'info>,
+    /// CHECK: Delegation record PDA for room.
+    #[account(mut)]
+    pub delegation_record_room: UncheckedAccount<'info>,
+    /// CHECK: Delegation metadata PDA for room.
+    #[account(mut)]
+    pub delegation_metadata_room: UncheckedAccount<'info>,
+    /// CHECK: Buffer PDA for vault delegation.
+    #[account(mut)]
+    pub buffer_vault: UncheckedAccount<'info>,
+    /// CHECK: Delegation record PDA for vault.
+    #[account(mut)]
+    pub delegation_record_vault: UncheckedAccount<'info>,
+    /// CHECK: Delegation metadata PDA for vault.
+    #[account(mut)]
+    pub delegation_metadata_vault: UncheckedAccount<'info>,
+    /// CHECK: Buffer PDA for winner state delegation.
+    #[account(mut)]
+    pub buffer_winner_state: UncheckedAccount<'info>,
+    /// CHECK: Delegation record PDA for winner state.
+    #[account(mut)]
+    pub delegation_record_winner_state: UncheckedAccount<'info>,
+    /// CHECK: Delegation metadata PDA for winner state.
+    #[account(mut)]
+    pub delegation_metadata_winner_state: UncheckedAccount<'info>,
+    /// CHECK: Buffer PDA for player one reveal delegation.
+    #[account(mut)]
+    pub buffer_player_one_reveal: UncheckedAccount<'info>,
+    /// CHECK: Delegation record PDA for player one reveal.
+    #[account(mut)]
+    pub delegation_record_player_one_reveal: UncheckedAccount<'info>,
+    /// CHECK: Delegation metadata PDA for player one reveal.
+    #[account(mut)]
+    pub delegation_metadata_player_one_reveal: UncheckedAccount<'info>,
+    /// CHECK: Buffer PDA for player two reveal delegation.
+    #[account(mut)]
+    pub buffer_player_two_reveal: UncheckedAccount<'info>,
+    /// CHECK: Delegation record PDA for player two reveal.
+    #[account(mut)]
+    pub delegation_record_player_two_reveal: UncheckedAccount<'info>,
+    /// CHECK: Delegation metadata PDA for player two reveal.
+    #[account(mut)]
+    pub delegation_metadata_player_two_reveal: UncheckedAccount<'info>,
 }
 
-#[vrf]
 #[derive(Accounts)]
 pub struct RequestWinnerVrf<'info> {
     #[account(mut)]
@@ -617,6 +796,39 @@ pub struct RequestWinnerVrf<'info> {
     /// CHECK: VRF queue account validated by address.
     #[account(mut, address = ephemeral_vrf_sdk::consts::DEFAULT_EPHEMERAL_QUEUE)]
     pub oracle_queue: AccountInfo<'info>,
+    /// CHECK: Program identity PDA used to sign the VRF request CPI.
+    #[account(seeds = [ephemeral_vrf_sdk::consts::IDENTITY], bump)]
+    pub program_identity: AccountInfo<'info>,
+    pub vrf_program: Program<'info, ephemeral_vrf_sdk::anchor::VrfProgram>,
+    /// CHECK: Slot hashes sysvar account.
+    #[account(address = anchor_lang::solana_program::sysvar::slot_hashes::ID)]
+    pub slot_hashes: AccountInfo<'info>,
+    pub system_program: Program<'info, System>,
+}
+
+impl<'info> RequestWinnerVrf<'info> {
+    fn invoke_signed_vrf(
+        &self,
+        payer: &AccountInfo<'info>,
+        ix: &anchor_lang::solana_program::instruction::Instruction,
+    ) -> anchor_lang::solana_program::entrypoint::ProgramResult {
+        let identity_bump =
+            Pubkey::try_find_program_address(&[ephemeral_vrf_sdk::consts::IDENTITY], &crate::ID)
+                .ok_or(anchor_lang::solana_program::program_error::ProgramError::InvalidSeeds)?
+                .1;
+
+        anchor_lang::solana_program::program::invoke_signed(
+            ix,
+            &[
+                payer.clone(),
+                self.program_identity.to_account_info(),
+                self.oracle_queue.to_account_info(),
+                self.system_program.to_account_info(),
+                self.slot_hashes.to_account_info(),
+            ],
+            &[&[ephemeral_vrf_sdk::consts::IDENTITY, &[identity_bump]]],
+        )
+    }
 }
 
 #[derive(Accounts)]
@@ -691,31 +903,22 @@ pub struct FinalizeWin<'info> {
         seeds = [SEED_ROOM, room.creator.as_ref()],
         bump = room.bump
     )]
-    pub room: Account<'info, RoomShared>,
+    pub room: Box<Account<'info, RoomShared>>,
     #[account(
         mut,
         seeds = [SEED_VAULT, room.key().as_ref()],
         bump = vault.bump
     )]
-    pub vault: Account<'info, VaultEscrow>,
-    #[account(
-        mut,
-        seeds = [SEED_WINNER, room.key().as_ref()],
-        bump = winner_state.bump
-    )]
-    pub winner_state: Account<'info, WinnerState>,
-    #[account(
-        mut,
-        seeds = [SEED_REVEAL, room.key().as_ref(), room.player_one.as_ref()],
-        bump = player_one_reveal.bump
-    )]
-    pub player_one_reveal: Account<'info, PlayerReveal>,
-    #[account(
-        mut,
-        seeds = [SEED_REVEAL, room.key().as_ref(), room.player_two.as_ref()],
-        bump = player_two_reveal.bump
-    )]
-    pub player_two_reveal: Account<'info, PlayerReveal>,
+    pub vault: Box<Account<'info, VaultEscrow>>,
+    /// CHECK: Validated against derived winner-state PDA in handler.
+    #[account(mut)]
+    pub winner_state: AccountInfo<'info>,
+    /// CHECK: Validated against derived reveal PDA in handler.
+    #[account(mut)]
+    pub player_one_reveal: AccountInfo<'info>,
+    /// CHECK: Validated against derived reveal PDA in handler.
+    #[account(mut)]
+    pub player_two_reveal: AccountInfo<'info>,
 }
 
 #[account]
@@ -900,6 +1103,77 @@ fn cell_index_i16(x: i16, y: i16, z: i16) -> Result<usize> {
     Ok(idx)
 }
 
+fn verify_delegate_aux_accounts(
+    delegated_pda: &AccountInfo<'_>,
+    buffer: &AccountInfo<'_>,
+    delegation_record: &AccountInfo<'_>,
+    delegation_metadata: &AccountInfo<'_>,
+    owner_program: Pubkey,
+    delegation_program: Pubkey,
+) -> Result<()> {
+    let expected_buffer =
+        Pubkey::find_program_address(&[b"buffer", delegated_pda.key.as_ref()], &owner_program).0;
+    let expected_record = Pubkey::find_program_address(
+        &[b"delegation", delegated_pda.key.as_ref()],
+        &delegation_program,
+    )
+    .0;
+    let expected_metadata = Pubkey::find_program_address(
+        &[b"delegation-metadata", delegated_pda.key.as_ref()],
+        &delegation_program,
+    )
+    .0;
+
+    require_keys_eq!(
+        *buffer.key,
+        expected_buffer,
+        MineDuelError::InvalidDelegateAccounts
+    );
+    require_keys_eq!(
+        *delegation_record.key,
+        expected_record,
+        MineDuelError::InvalidDelegateAccounts
+    );
+    require_keys_eq!(
+        *delegation_metadata.key,
+        expected_metadata,
+        MineDuelError::InvalidDelegateAccounts
+    );
+    Ok(())
+}
+
+fn delegate_one<'info>(
+    payer: &AccountInfo<'info>,
+    owner_program: &AccountInfo<'info>,
+    delegation_program: &AccountInfo<'info>,
+    system_program: &AccountInfo<'info>,
+    pda: &AccountInfo<'info>,
+    buffer: &AccountInfo<'info>,
+    delegation_record: &AccountInfo<'info>,
+    delegation_metadata: &AccountInfo<'info>,
+    pda_seeds: &[&[u8]],
+    validator: Option<Pubkey>,
+) -> Result<()> {
+    delegate_account(
+        DelegateAccounts {
+            payer,
+            pda,
+            owner_program,
+            buffer,
+            delegation_record,
+            delegation_metadata,
+            delegation_program,
+            system_program,
+        },
+        pda_seeds,
+        DelegateConfig {
+            validator,
+            ..Default::default()
+        },
+    )?;
+    Ok(())
+}
+
 #[error_code]
 pub enum MineDuelError {
     #[msg("Invalid status transition for this instruction.")]
@@ -924,4 +1198,8 @@ pub enum MineDuelError {
     VrfNotReady,
     #[msg("Invalid or expired session token.")]
     InvalidSessionToken,
+    #[msg("Invalid delegation support account set.")]
+    InvalidDelegateAccounts,
+    #[msg("Invalid finalize account set.")]
+    InvalidFinalizeAccounts,
 }

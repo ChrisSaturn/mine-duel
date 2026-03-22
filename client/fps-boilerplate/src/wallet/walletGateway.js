@@ -81,6 +81,8 @@ export function createWalletGateway(options = {}) {
   let selectedWalletName = typeof options.selectedWalletName === 'string' ? options.selectedWalletName : '';
   let activeAdapter = null;
   let connecting = false;
+  let disconnecting = false;
+  let ignoreConnectEvents = false;
   let lastErrorMessage = '';
 
   if (persistSelection && !selectedWalletName) {
@@ -150,9 +152,10 @@ export function createWalletGateway(options = {}) {
       rpcEndpoint,
       wallets: getWallets(),
       selectedWalletName,
-      connected: Boolean(activeAdapter?.connected && activeAdapter?.publicKey),
+      connected: Boolean(activeAdapter?.publicKey),
       connecting,
-      connectedWalletName: activeAdapter?.connected ? String(activeAdapter.name) : '',
+      disconnecting,
+      connectedWalletName: activeAdapter ? String(activeAdapter.name) : '',
       publicKey: connectedPublicKey,
       publicKeyShort: toPublicKeyShort(connectedPublicKey),
       error: lastErrorMessage
@@ -168,10 +171,14 @@ export function createWalletGateway(options = {}) {
 
   for (const adapter of adapters) {
     const onConnect = () => {
+      if (ignoreConnectEvents) {
+        return;
+      }
       activeAdapter = adapter;
       selectedWalletName = String(adapter.name);
       persistSelectionName(selectedWalletName);
       connecting = false;
+      disconnecting = false;
       lastErrorMessage = '';
       notify();
     };
@@ -181,12 +188,14 @@ export function createWalletGateway(options = {}) {
         activeAdapter = null;
       }
       connecting = false;
+      disconnecting = false;
       notify();
     };
 
     const onError = (error) => {
       lastErrorMessage = toErrorMessage(error);
       connecting = false;
+      disconnecting = false;
       notify();
     };
 
@@ -247,6 +256,8 @@ export function createWalletGateway(options = {}) {
 
   async function connect(walletName) {
     const target = resolveConnectTarget(walletName);
+    ignoreConnectEvents = false;
+    disconnecting = false;
 
     if (activeAdapter && activeAdapter !== target && activeAdapter.connected) {
       await activeAdapter.disconnect();
@@ -274,19 +285,48 @@ export function createWalletGateway(options = {}) {
   }
 
   async function disconnect() {
-    if (!activeAdapter) {
+    ignoreConnectEvents = true;
+    const adaptersToDisconnect = adapters.filter((adapter) => adapter.connected || adapter === activeAdapter);
+    if (adaptersToDisconnect.length === 0) {
       lastErrorMessage = '';
+      activeAdapter = null;
+      connecting = false;
+      disconnecting = false;
       notify();
       return;
     }
 
+    // Reflect disconnected UI state immediately instead of waiting for wallet-adapter events.
+    activeAdapter = null;
     connecting = true;
+    disconnecting = true;
+    lastErrorMessage = '';
     notify();
 
+    /** @type {unknown} */
+    let firstError = null;
+
     try {
-      await activeAdapter.disconnect();
+      for (const adapter of adaptersToDisconnect) {
+        try {
+          await adapter.disconnect();
+        } catch (error) {
+          if (!firstError) {
+            firstError = error;
+          }
+        }
+      }
+
+      if (firstError) {
+        throw firstError;
+      }
+    } catch (error) {
+      lastErrorMessage = toErrorMessage(error);
+      throw error;
     } finally {
+      activeAdapter = null;
       connecting = false;
+      disconnecting = false;
       notify();
     }
   }
@@ -323,6 +363,12 @@ export function createWalletGateway(options = {}) {
     return adapter.sendTransaction(transaction, connection, options);
   }
 
+  async function getBalanceSol() {
+    const adapter = requireConnectedAdapter();
+    const lamports = await connection.getBalance(adapter.publicKey, 'confirmed');
+    return lamports / 1_000_000_000;
+  }
+
   function onChange(listener) {
     listeners.add(listener);
     listener(getState());
@@ -352,6 +398,7 @@ export function createWalletGateway(options = {}) {
     signAllTransactions,
     signMessage,
     sendTransaction,
+    getBalanceSol,
     onChange,
     destroy
   };

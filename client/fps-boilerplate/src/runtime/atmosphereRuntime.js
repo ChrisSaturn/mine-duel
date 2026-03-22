@@ -1,10 +1,19 @@
 import * as THREE from 'three';
+import {
+  DEFAULT_BLOCKWORLD_BIOME,
+  getBlockworldBiomePreset,
+  normalizeBlockworldBiome
+} from './blockworldStyleRuntime.js';
 
 const PEAK_SHADOW_MIN_ASPECT = 1.1;
 const PEAK_SHADOW_HALF_HEIGHT_DESKTOP = 52;
 const PEAK_SHADOW_HALF_HEIGHT_MOBILE = 64;
 const PEAK_SHADOW_MAP_DESKTOP = 4096;
 const PEAK_SHADOW_MAP_MOBILE = 2048;
+const SKY_DOME_RADIUS = 320;
+const TOP_SKY_SUN_ELEVATION = 1.02;
+const TOP_SKY_SUN_AZIMUTH_SPEED = 0.00738;
+const TOP_SKY_SUN_AZIMUTH_OFFSET = Math.PI * 0.22;
 
 const SKY_VERTEX_SHADER = `
 varying vec3 vWorldPosition;
@@ -94,10 +103,8 @@ void main() {
   vec3 cloudColor = mix(cloudShadowColor, cloudBrightColor, cloudNoise);
   sky = mix(sky, cloudColor, cloudMask * 0.82);
 
-  float sunDot = max(dot(dir, sunDir), 0.0);
-  float sunDisk = smoothstep(0.994, 0.9994, sunDot);
-  float sunHalo = pow(sunDot, 18.0);
-  sky += sunColor * (sunDisk * 1.45 + sunHalo * 0.36);
+  // Keep sunlight contribution in world lighting, but avoid drawing
+  // a visible in-view orb in the sky shader.
 
   float horizonHaze = clamp(1.0 - smoothstep(0.02, 0.4, dir.y), 0.0, 1.0);
   sky = mix(sky, horizonColor, horizonHaze * 0.18);
@@ -186,7 +193,7 @@ export function createAtmosphereRuntime({ scene, renderer }) {
   root.add(sunLight);
 
   const skyDome = new THREE.Mesh(
-    new THREE.SphereGeometry(460, 56, 32),
+    new THREE.SphereGeometry(SKY_DOME_RADIUS, 56, 32),
     createSkyMaterial()
   );
   skyDome.name = 'atmosphere-sky-dome';
@@ -201,34 +208,111 @@ export function createAtmosphereRuntime({ scene, renderer }) {
   const skyZenithMix = new THREE.Color();
   const skyHorizonMix = new THREE.Color();
   const skyNadirMix = new THREE.Color();
+  const cloudBrightMix = new THREE.Color();
+  const cloudShadowMix = new THREE.Color();
+  const hemiSkyMix = new THREE.Color();
+  const hemiGroundMix = new THREE.Color();
+  const ambientMixColor = new THREE.Color();
+  const bounceMixColor = new THREE.Color();
   const viewportSize = new THREE.Vector2(window.innerWidth, window.innerHeight);
 
-  const sunDayColor = new THREE.Color(0xfff1d4);
-  const sunSunsetColor = new THREE.Color(0xffbd8f);
-  const sunNightColor = new THREE.Color(0x8ea1c5);
+  const sunDayColor = new THREE.Color();
+  const sunSunsetColor = new THREE.Color();
+  const sunNightColor = new THREE.Color();
 
-  const fogDayColor = new THREE.Color(0x95b3cd);
-  const fogSunsetColor = new THREE.Color(0x7d81ab);
-  const fogNightColor = new THREE.Color(0x324768);
+  const fogDayColor = new THREE.Color();
+  const fogSunsetColor = new THREE.Color();
+  const fogNightColor = new THREE.Color();
 
-  const zenithDayColor = new THREE.Color(0x6f9fd6);
-  const zenithSunsetColor = new THREE.Color(0x8e6ea8);
-  const zenithNightColor = new THREE.Color(0x1f2f4f);
+  const zenithDayColor = new THREE.Color();
+  const zenithSunsetColor = new THREE.Color();
+  const zenithNightColor = new THREE.Color();
 
-  const horizonDayColor = new THREE.Color(0xd8bd9f);
-  const horizonSunsetColor = new THREE.Color(0xf09f71);
-  const horizonNightColor = new THREE.Color(0x4a5478);
+  const horizonDayColor = new THREE.Color();
+  const horizonSunsetColor = new THREE.Color();
+  const horizonNightColor = new THREE.Color();
 
-  const nadirDayColor = new THREE.Color(0x7484a1);
-  const nadirSunsetColor = new THREE.Color(0x76648d);
-  const nadirNightColor = new THREE.Color(0x1f2f47);
+  const nadirDayColor = new THREE.Color();
+  const nadirSunsetColor = new THREE.Color();
+  const nadirNightColor = new THREE.Color();
 
-  const cloudDayColor = new THREE.Color(0xfde9d3);
-  const cloudSunsetColor = new THREE.Color(0xffc7a3);
-  const cloudNightColor = new THREE.Color(0x7686aa);
+  const cloudBrightDayColor = new THREE.Color();
+  const cloudBrightSunsetColor = new THREE.Color();
+  const cloudBrightNightColor = new THREE.Color();
 
+  const cloudShadowDayColor = new THREE.Color();
+  const cloudShadowSunsetColor = new THREE.Color();
+  const cloudShadowNightColor = new THREE.Color();
+
+  const hemiSkyDayColor = new THREE.Color();
+  const hemiSkySunsetColor = new THREE.Color();
+  const hemiSkyNightColor = new THREE.Color();
+
+  const hemiGroundDayColor = new THREE.Color();
+  const hemiGroundSunsetColor = new THREE.Color();
+  const hemiGroundNightColor = new THREE.Color();
+
+  const ambientDayColor = new THREE.Color();
+  const ambientSunsetColor = new THREE.Color();
+  const ambientNightColor = new THREE.Color();
+
+  const bounceDayColor = new THREE.Color();
+  const bounceSunsetColor = new THREE.Color();
+  const bounceNightColor = new THREE.Color();
+
+  let activeBiome = DEFAULT_BLOCKWORLD_BIOME;
+  let activePreset = getBlockworldBiomePreset(DEFAULT_BLOCKWORLD_BIOME);
   let shadowTexelWorldSize = 0;
   let shadowHalfSpan = PEAK_SHADOW_HALF_HEIGHT_DESKTOP;
+
+  function applyBiome(biomeName = DEFAULT_BLOCKWORLD_BIOME) {
+    activeBiome = normalizeBlockworldBiome(biomeName);
+    activePreset = getBlockworldBiomePreset(activeBiome);
+
+    sunDayColor.setHex(activePreset.sun.day);
+    sunSunsetColor.setHex(activePreset.sun.sunset);
+    sunNightColor.setHex(activePreset.sun.night);
+
+    fogDayColor.setHex(activePreset.fog.day);
+    fogSunsetColor.setHex(activePreset.fog.sunset);
+    fogNightColor.setHex(activePreset.fog.night);
+
+    zenithDayColor.setHex(activePreset.sky.zenith.day);
+    zenithSunsetColor.setHex(activePreset.sky.zenith.sunset);
+    zenithNightColor.setHex(activePreset.sky.zenith.night);
+
+    horizonDayColor.setHex(activePreset.sky.horizon.day);
+    horizonSunsetColor.setHex(activePreset.sky.horizon.sunset);
+    horizonNightColor.setHex(activePreset.sky.horizon.night);
+
+    nadirDayColor.setHex(activePreset.sky.nadir.day);
+    nadirSunsetColor.setHex(activePreset.sky.nadir.sunset);
+    nadirNightColor.setHex(activePreset.sky.nadir.night);
+
+    cloudBrightDayColor.setHex(activePreset.cloud.bright.day);
+    cloudBrightSunsetColor.setHex(activePreset.cloud.bright.sunset);
+    cloudBrightNightColor.setHex(activePreset.cloud.bright.night);
+
+    cloudShadowDayColor.setHex(activePreset.cloud.shadow.day);
+    cloudShadowSunsetColor.setHex(activePreset.cloud.shadow.sunset);
+    cloudShadowNightColor.setHex(activePreset.cloud.shadow.night);
+
+    hemiSkyDayColor.setHex(activePreset.hemisphere.sky.day);
+    hemiSkySunsetColor.setHex(activePreset.hemisphere.sky.sunset);
+    hemiSkyNightColor.setHex(activePreset.hemisphere.sky.night);
+
+    hemiGroundDayColor.setHex(activePreset.hemisphere.ground.day);
+    hemiGroundSunsetColor.setHex(activePreset.hemisphere.ground.sunset);
+    hemiGroundNightColor.setHex(activePreset.hemisphere.ground.night);
+
+    ambientDayColor.setHex(activePreset.ambient.day);
+    ambientSunsetColor.setHex(activePreset.ambient.sunset);
+    ambientNightColor.setHex(activePreset.ambient.night);
+
+    bounceDayColor.setHex(activePreset.bounce.day);
+    bounceSunsetColor.setHex(activePreset.bounce.sunset);
+    bounceNightColor.setHex(activePreset.bounce.night);
+  }
 
   function applyShadowViewport(width = viewportSize.x, height = viewportSize.y) {
     viewportSize.set(Math.max(1, width), Math.max(1, height));
@@ -255,13 +339,17 @@ export function createAtmosphereRuntime({ scene, renderer }) {
     sunLight.shadow.needsUpdate = true;
   }
 
+  function setBiome(nextBiome) {
+    applyBiome(nextBiome);
+  }
+
+  applyBiome(DEFAULT_BLOCKWORLD_BIOME);
   applyShadowViewport();
 
   function update({ timeSeconds = 0, focusPosition = null } = {}) {
     const focus = focusPosition || root.position;
-    const cycle = timeSeconds * 0.018;
-    const elevation = Math.sin(cycle) * 0.46 + 0.2;
-    const azimuth = cycle * 0.41 + Math.PI * 0.22;
+    const elevation = TOP_SKY_SUN_ELEVATION;
+    const azimuth = timeSeconds * TOP_SKY_SUN_AZIMUTH_SPEED + TOP_SKY_SUN_AZIMUTH_OFFSET;
 
     const cosElevation = Math.cos(elevation);
     sunDirection.set(
@@ -292,16 +380,47 @@ export function createAtmosphereRuntime({ scene, renderer }) {
 
     skyDome.position.copy(anchoredFocus);
 
+    const intensity = activePreset.intensity;
+    const fogRange = activePreset.fogRange;
+    const exposure = activePreset.exposure;
+
     sunColor
       .copy(sunNightColor)
       .lerp(sunSunsetColor, sunsetFactor)
       .lerp(sunDayColor, dayFactor);
     sunLight.color.copy(sunColor);
 
-    sunLight.intensity = THREE.MathUtils.lerp(0.22, 2.08, dayFactor) + sunsetFactor * 0.56;
-    hemi.intensity = THREE.MathUtils.lerp(0.14, 0.48, dayFactor) + sunsetFactor * 0.14;
-    ambientFill.intensity = THREE.MathUtils.lerp(0.18, 0.58, dayFactor) + sunsetFactor * 0.1;
-    fillLight.intensity = THREE.MathUtils.lerp(0.05, 0.36, dayFactor) + sunsetFactor * 0.08;
+    sunLight.intensity = THREE.MathUtils.lerp(intensity.sunNight, intensity.sunDay, dayFactor)
+      + sunsetFactor * intensity.sunSunsetBoost;
+
+    hemiSkyMix
+      .copy(hemiSkyNightColor)
+      .lerp(hemiSkySunsetColor, sunsetFactor)
+      .lerp(hemiSkyDayColor, dayFactor);
+    hemiGroundMix
+      .copy(hemiGroundNightColor)
+      .lerp(hemiGroundSunsetColor, sunsetFactor)
+      .lerp(hemiGroundDayColor, dayFactor);
+    hemi.color.copy(hemiSkyMix);
+    hemi.groundColor.copy(hemiGroundMix);
+    hemi.intensity = THREE.MathUtils.lerp(intensity.hemiNight, intensity.hemiDay, dayFactor)
+      + sunsetFactor * intensity.hemiSunsetBoost;
+
+    ambientMixColor
+      .copy(ambientNightColor)
+      .lerp(ambientSunsetColor, sunsetFactor)
+      .lerp(ambientDayColor, dayFactor);
+    ambientFill.color.copy(ambientMixColor);
+    ambientFill.intensity = THREE.MathUtils.lerp(intensity.ambientNight, intensity.ambientDay, dayFactor)
+      + sunsetFactor * intensity.ambientSunsetBoost;
+
+    bounceMixColor
+      .copy(bounceNightColor)
+      .lerp(bounceSunsetColor, sunsetFactor)
+      .lerp(bounceDayColor, dayFactor);
+    fillLight.color.copy(bounceMixColor);
+    fillLight.intensity = THREE.MathUtils.lerp(intensity.bounceNight, intensity.bounceDay, dayFactor)
+      + sunsetFactor * intensity.bounceSunsetBoost;
 
     skyDome.material.uniforms.time.value = timeSeconds;
     skyDome.material.uniforms.sunDirection.value.copy(sunDirection);
@@ -323,10 +442,18 @@ export function createAtmosphereRuntime({ scene, renderer }) {
     skyDome.material.uniforms.zenithColor.value.copy(skyZenithMix);
     skyDome.material.uniforms.horizonColor.value.copy(skyHorizonMix);
     skyDome.material.uniforms.nadirColor.value.copy(skyNadirMix);
-    skyDome.material.uniforms.cloudBrightColor.value
-      .copy(cloudNightColor)
-      .lerp(cloudSunsetColor, sunsetFactor)
-      .lerp(cloudDayColor, dayFactor);
+
+    cloudBrightMix
+      .copy(cloudBrightNightColor)
+      .lerp(cloudBrightSunsetColor, sunsetFactor)
+      .lerp(cloudBrightDayColor, dayFactor);
+    cloudShadowMix
+      .copy(cloudShadowNightColor)
+      .lerp(cloudShadowSunsetColor, sunsetFactor)
+      .lerp(cloudShadowDayColor, dayFactor);
+
+    skyDome.material.uniforms.cloudBrightColor.value.copy(cloudBrightMix);
+    skyDome.material.uniforms.cloudShadowColor.value.copy(cloudShadowMix);
 
     fogMixColor
       .copy(fogNightColor)
@@ -334,10 +461,12 @@ export function createAtmosphereRuntime({ scene, renderer }) {
       .lerp(fogDayColor, dayFactor);
     scene.fog.color.copy(fogMixColor);
     scene.background.copy(fogMixColor);
-    scene.fog.near = THREE.MathUtils.lerp(34, 58, dayFactor);
-    scene.fog.far = THREE.MathUtils.lerp(170, 305, dayFactor) + sunsetFactor * 24;
+    scene.fog.near = THREE.MathUtils.lerp(fogRange.nearNight, fogRange.nearDay, dayFactor);
+    scene.fog.far = THREE.MathUtils.lerp(fogRange.farNight, fogRange.farDay, dayFactor)
+      + sunsetFactor * fogRange.sunsetBonus;
 
-    renderer.toneMappingExposure = THREE.MathUtils.lerp(0.84, 1.18, dayFactor) + sunsetFactor * 0.06;
+    renderer.toneMappingExposure = THREE.MathUtils.lerp(exposure.night, exposure.day, dayFactor)
+      + sunsetFactor * exposure.sunsetBoost;
 
     sunTarget.updateMatrixWorld(true);
     fillTarget.updateMatrixWorld(true);
@@ -353,6 +482,8 @@ export function createAtmosphereRuntime({ scene, renderer }) {
   return {
     sunLight,
     setViewportSize: applyShadowViewport,
+    setBiome,
+    getBiome: () => activeBiome,
     update,
     dispose
   };

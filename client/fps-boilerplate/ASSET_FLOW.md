@@ -57,6 +57,8 @@ Each map JSON stores:
 
 - `objects[]`: `id`, `template`, `position`, `rotation`, `scale`
 - `cameraPreset`: `localOffset`, `pitchMin`, `pitchMax`, `fov`
+  - runtime clamp: `pitchMin` is floored at `-85°` (`-1.48353`) and `pitchMax` is capped at `+90°` (`+PI/2`)
+- `spawnPreset`: `position`, `yaw`
 - `hitboxes[]`: `id`, `type`, `position`, `rotation`, plus:
   - `size` for `box`
   - `radius` + `height` for `capsule`
@@ -66,9 +68,22 @@ Each map JSON stores:
 ## Runtime Contract (for humans and AI tools)
 
 - Runtime loads assets and maps only from `public/` URLs.
+- Runtime resolves public URLs against `import.meta.env.BASE_URL` so `/game/`-style hosted paths work without root-absolute URL breakage.
 - `src/runtime/mapRuntime.js` owns template mapping, manifest normalization, and world/hitbox application.
 - Template `primitive-plane` is generated in runtime code (no external GLB), and includes a collider volume.
-- Template `cube-world-ground` is also generated in runtime code and builds a contiguous cube-world grass block grid with a dedicated mesh-collider child.
+- Template `cube-world-ground` is also generated in runtime code and builds a contiguous cube-world block grid with a dedicated mesh-collider child, including a stone/rock `16x16x8` mine patch (from stone source geometry) with preserved top-height and flush tile alignment (no visible seams).
+- Additional Cube World environment template aliases exposed by runtime:
+  - `cube-world-tree-{1,2,3}`
+  - `cube-world-rock-{1,2}`
+  - `cube-world-mushroom`
+  - `cube-world-fence-{center,corner,end}`
+  - `cube-world-sugarcane` (mapped to `Environment/glTF/Bamboo.gltf`)
+  - `cube-world-flowers-{1,2}`
+  - `cube-world-grass-{small,big}`
+- Current default map manifest targets `cube-world-ground` for a playable base with a stone/rock mine patch baked into the procedural template.
+- Current default map manifest also places curated Cube World vegetation + prop clusters (trees, rocks, mushrooms, fences, sugarcane/bamboo, flowers, grass).
+- Cube World world-object templates (`cube-world-*`) preserve original authored textures, including procedural `cube-world-ground` cube instances sourced from Cube World block materials.
+- Biome stylization pass applies only to `block-grass*` and `primitive-plane`; stylization exclusions include `demo-scene`, `character-male-a`, and `blocky-character-*` templates.
 - Template `demo-scene` loads `/models/maps/demo-scene/Demo.gltf` and injects an explicit `mapCollider` ground volume in runtime.
 - Editor-enabled map authoring outputs JSON compatible with the same runtime loader.
 - Production build must exclude dev editor code paths.
@@ -94,5 +109,6 @@ Each map JSON stores:
 - `public/models/characters/Textures/colormap.png`
 - `public/models/cube-world/**` (full `Cube World - Aug 2023` source mirror: `glTF`, `FBX`, `OBJ`, `Blends`, plus `Atlas.png`, `Blocks_PixelArt.png`, and `Preview.jpg`)
 - `public/models/maps/demo-scene/Demo.gltf` (+ `Demo.bin`, `Atlas.jpg`, `colormap.jpg`, `texture-h.jpg`)
+  - Note: this map asset is sanitized for Three.js loader compatibility (invalid skin bindings removed from static animal meshes).
 - `public/ui/kenney-ui-pack-pixel-adventure/**`
 - `public/fonts/minecraft.ttf`

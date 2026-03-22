@@ -8,9 +8,24 @@ import {
   normalizeMapData
 } from './runtime/mapRuntime.js';
 import { createAtmosphereRuntime } from './runtime/atmosphereRuntime.js';
+import {
+  DEFAULT_BLOCKWORLD_BIOME,
+  getBlockworldPostProcessStyle,
+  normalizeBlockworldBiome
+} from './runtime/blockworldStyleRuntime.js';
+import { createFirstPersonControllerRuntime } from './runtime/firstPersonControllerRuntime.js';
 import { createPostProcessRuntime } from './runtime/postProcessRuntime.js';
 import { createStreamRuntime } from './runtime/streamRuntime.js';
 import { createVoxelRuntime } from './runtime/voxelRuntime.js';
+
+function withBaseUrl(path) {
+  const baseUrl = typeof import.meta?.env?.BASE_URL === 'string'
+    ? import.meta.env.BASE_URL
+    : '/';
+  const normalizedBase = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
+  const normalizedPath = String(path || '').replace(/^\/+/, '');
+  return `${normalizedBase}${normalizedPath}`;
+}
 
 // ---------------------------------------------
 // UI refs
@@ -21,6 +36,8 @@ const instructions = document.getElementById('instructions');
 const fpsValue = document.getElementById('fps-value');
 const hud = document.getElementById('hud');
 const crosshair = document.getElementById('crosshair');
+const sprintBar = document.getElementById('sprint-bar');
+const sprintBarFill = document.getElementById('sprint-bar-fill');
 const walletSelect = document.getElementById('wallet-select');
 const walletConnectButton = document.getElementById('wallet-connect');
 const walletDisconnectButton = document.getElementById('wallet-disconnect');
@@ -53,17 +70,19 @@ const CONFIG = {
   ),
   mineDuelProgramId: String(import.meta.env.VITE_MINE_DUEL_PROGRAM_ID || 'HFmWxe7HufHuygGS5j9ZRKdHwZtXdWWz6iDccH6x4VBq'),
   playerHeight: 1.62,
-  playerSpeed: 6.8,
-  runMultiplier: 1.85,
-  gravity: -25,
-  jumpVelocity: 7.2,
-  mouseSensitivity: 5,
-  mouseLookSpeed: 0.0001,
+  walkSpeed: 5,
+  sprintSpeed: 7,
+  maxVelocityChange: 10,
+  gravity: -9.81,
+  jumpVelocity: 5,
+  mouseSensitivity: 2,
+  mouseLookSpeed: Math.PI / 1800,
   playerModelScale: 1,
-  cameraHeadForwardOffset: 0.44,
+  cameraHeadForwardOffset: 0,
   cameraHeadVerticalOffset: 0.03,
-  minPitch: -Math.PI / 2,
-  maxPitch: Math.PI / 2,
+  crouchCameraDrop: 0.34,
+  minPitch: -THREE.MathUtils.degToRad(50),
+  maxPitch: THREE.MathUtils.degToRad(50),
   playerColliderRadius: 0.35,
   playerColliderHeight: 1.7,
   playerCollisionIterations: 3,
@@ -71,10 +90,27 @@ const CONFIG = {
   groundProbeDistance: 5,
   groundSnapDistance: 0.12,
   fallResetHeight: -20,
+  fixedTimeStep: 1 / 50,
+  maxFixedStepsPerFrame: 5,
+  fovNormal: 70,
+  zoomFov: 30,
+  zoomStepTime: 10,
+  sprintFov: 80,
+  sprintFovStepTime: 10,
+  sprintDuration: 5,
+  sprintCooldownDuration: 0.5,
+  crouchHeight: 0.5,
+  crouchSpeedReduction: 0.5,
+  crouchTransitionSpeed: 12,
+  holdToCrouch: false,
+  bobSpeed: 10,
+  bobSprintSpeedBoost: 7,
+  bobAmountY: 0.1,
   maxDeltaSeconds: 0.05,
   fpsUpdateIntervalMs: 250
 };
-const PLAYER_MODEL_PATH = '/models/characters/kenney-blocky/character-a.glb';
+const DEFAULT_PLAYER_MODEL_PATH = withBaseUrl('models/characters/kenney-blocky/character-a.glb');
+let selectedPlayerModelPath = DEFAULT_PLAYER_MODEL_PATH;
 
 // ---------------------------------------------
 // Core three.js objects
@@ -97,8 +133,11 @@ renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.shadowMap.autoUpdate = true;
 app.prepend(renderer.domElement);
 
+const playerSpawnPosition = new THREE.Vector3(0, 0, 10);
+let playerSpawnYaw = 0;
+
 const playerRig = new THREE.Object3D();
-playerRig.position.set(0, 0, 10);
+playerRig.position.copy(playerSpawnPosition);
 scene.add(playerRig);
 playerRig.add(camera);
 camera.position.set(0, CONFIG.playerHeight, 0);
@@ -116,9 +155,7 @@ const inputState = {
 };
 
 const playerVelocity = new THREE.Vector3();
-const moveDirection = new THREE.Vector3();
 const cameraDirection = new THREE.Vector3();
-const upVector = new THREE.Vector3(0, 1, 0);
 const groundProbeOrigin = new THREE.Vector3();
 const groundRaycaster = new THREE.Raycaster(
   new THREE.Vector3(),
@@ -127,14 +164,14 @@ const groundRaycaster = new THREE.Raycaster(
   CONFIG.groundProbeDistance
 );
 
-const DIR_FWD = new THREE.Vector3(0, 0, -1);
-const DIR_BKD = new THREE.Vector3(0, 0, 1);
-const DIR_LFT = new THREE.Vector3(-1, 0, 0);
-const DIR_RGT = new THREE.Vector3(1, 0, 0);
 const bodyColliderBox = new THREE.Box3();
 const bodyColliderSample = new THREE.Vector3();
 const bodyColliderClosest = new THREE.Vector3();
 const bodyColliderPush = new THREE.Vector3();
+const bodyColliderRayOrigin = new THREE.Vector3();
+const bodyColliderRayDirection = new THREE.Vector3();
+const bodyColliderMeshPushDirection = new THREE.Vector3();
+const bodyColliderRaycaster = new THREE.Raycaster();
 const playerModelBounds = new THREE.Box3();
 const playerModelSize = new THREE.Vector3();
 const playerModelCenter = new THREE.Vector3();
@@ -144,9 +181,7 @@ const playerModelMinLocal = new THREE.Vector3();
 const runtimeHeadPitchAxis = new THREE.Vector3(1, 0, 0);
 const runtimeHeadPitchQuaternion = new THREE.Quaternion();
 const runtimeHeadWorldPosition = new THREE.Vector3();
-const runtimeCameraAnchorWorldPosition = new THREE.Vector3();
-const runtimeCameraForward = new THREE.Vector3();
-const worldUpVector = new THREE.Vector3(0, 1, 0);
+const runtimeHeadLocalAnchor = new THREE.Vector3();
 
 const playerModelLoader = new GLTFLoader();
 const playerVisualRoot = new THREE.Group();
@@ -166,12 +201,20 @@ const runtimePlayerLimbState = {
 const limbTargetRotation = new THREE.Quaternion();
 const limbOffsetRotation = new THREE.Quaternion();
 const limbOffsetEuler = new THREE.Euler();
+const HORIZONTAL_COLLISION_RAY_DIRECTIONS = Object.freeze([
+  new THREE.Vector3(1, 0, 0),
+  new THREE.Vector3(-1, 0, 0),
+  new THREE.Vector3(0, 0, 1),
+  new THREE.Vector3(0, 0, -1),
+  new THREE.Vector3(Math.SQRT1_2, 0, Math.SQRT1_2),
+  new THREE.Vector3(Math.SQRT1_2, 0, -Math.SQRT1_2),
+  new THREE.Vector3(-Math.SQRT1_2, 0, Math.SQRT1_2),
+  new THREE.Vector3(-Math.SQRT1_2, 0, -Math.SQRT1_2)
+]);
 
 let canJump = true;
 let prevTimeMs = performance.now();
-let playerIsMovingHorizontally = false;
-let playerMovementSpeedNormalized = 0;
-let lookPitch = 0;
+let fixedStepAccumulator = 0;
 
 // ---------------------------------------------
 // FPS counter state
@@ -198,6 +241,21 @@ let streamRunning = false;
 let streamResyncInFlight = false;
 let atmosphereRuntime = null;
 let postProcessRuntime = null;
+const firstPersonController = createFirstPersonControllerRuntime({
+  camera,
+  playerRig,
+  config: CONFIG,
+  inputState,
+  sprintBar,
+  sprintBarFill,
+  onLookUpdated: () => {
+    updateRuntimeHeadFromCamera();
+    syncCameraToHeadAnchor();
+  },
+  onCrouchStateChanged: (nextCrouched) => {
+    playerVisualRoot.scale.set(1, nextCrouched ? CONFIG.crouchHeight : 1, 1);
+  }
+});
 
 if (import.meta.env.DEV) {
   const editorHint = document.createElement('p');
@@ -206,6 +264,17 @@ if (import.meta.env.DEV) {
     ? 'Dev editor enabled: press ` to toggle.'
     : 'Dev editor disabled. Set VITE_ENABLE_EDITOR=1 to enable.';
   hud?.appendChild(editorHint);
+}
+
+function getActiveBiomeLighting() {
+  return normalizeBlockworldBiome(activeMapData?.biomeLighting ?? DEFAULT_BLOCKWORLD_BIOME);
+}
+
+function syncBlockworldVisualStyle() {
+  const biomeLighting = getActiveBiomeLighting();
+  atmosphereRuntime?.setBiome?.(biomeLighting);
+  voxelRuntime?.setBiome?.(biomeLighting);
+  postProcessRuntime?.setPeakStyle?.(getBlockworldPostProcessStyle(biomeLighting));
 }
 
 function setMeshShadowFlags(root, { castShadow, receiveShadow }) {
@@ -351,51 +420,54 @@ function findRuntimeHeadNode(root) {
 }
 
 function updateRuntimeHeadFromCamera() {
-  lookPitch = THREE.MathUtils.clamp(lookPitch, CONFIG.minPitch, CONFIG.maxPitch);
+  firstPersonController.clampLookPitchToBounds();
 
   if (!runtimeHeadNode) {
     return;
   }
 
-  const headPitch = -lookPitch;
+  const headPitch = -firstPersonController.getLookPitch();
   runtimeHeadPitchQuaternion.setFromAxisAngle(runtimeHeadPitchAxis, headPitch);
   runtimeHeadNode.quaternion.copy(runtimeHeadNeutralQuaternion).multiply(runtimeHeadPitchQuaternion);
   runtimeHeadNode.updateMatrixWorld(true);
 }
 
 function syncCameraToHeadAnchor() {
+  const lookPitch = firstPersonController.getLookPitch();
+  const crouchBlend = firstPersonController.getCrouchBlend();
+  const headBobOffsetY = firstPersonController.getHeadBobOffsetY();
   camera.rotation.set(lookPitch, 0, 0);
+  const crouchYOffset = -CONFIG.crouchCameraDrop * crouchBlend;
+  const forwardOffset = CONFIG.cameraHeadForwardOffset * CONFIG.playerModelScale;
+  const localVerticalOffset = (CONFIG.cameraHeadVerticalOffset * CONFIG.playerModelScale) + crouchYOffset + headBobOffsetY;
 
-  if (!runtimeHeadNode) {
-    camera.position.set(0, CONFIG.playerHeight, 0);
+  if (runtimeHeadNode) {
+    runtimeHeadNode.updateWorldMatrix(true, false);
+    runtimeHeadWorldPosition.setFromMatrixPosition(runtimeHeadNode.matrixWorld);
+    runtimeHeadLocalAnchor.copy(runtimeHeadWorldPosition);
+    playerRig.worldToLocal(runtimeHeadLocalAnchor);
+
+    camera.position.set(
+      runtimeHeadLocalAnchor.x,
+      runtimeHeadLocalAnchor.y + localVerticalOffset,
+      runtimeHeadLocalAnchor.z - forwardOffset
+    );
     return;
   }
 
-  runtimeHeadNode.updateWorldMatrix(true, false);
-  runtimeHeadWorldPosition.setFromMatrixPosition(runtimeHeadNode.matrixWorld);
-  camera.getWorldDirection(runtimeCameraForward);
-
-  const forwardOffset = CONFIG.cameraHeadForwardOffset * CONFIG.playerModelScale;
-  const verticalOffset = CONFIG.cameraHeadVerticalOffset * CONFIG.playerModelScale;
-  runtimeCameraAnchorWorldPosition
-    .copy(runtimeHeadWorldPosition)
-    .addScaledVector(runtimeCameraForward, forwardOffset)
-    .addScaledVector(worldUpVector, verticalOffset);
-
-  playerRig.worldToLocal(runtimeCameraAnchorWorldPosition);
-  camera.position.copy(runtimeCameraAnchorWorldPosition);
+  camera.position.set(0, CONFIG.playerHeight + localVerticalOffset, -forwardOffset);
 }
 
 function bindCameraToRuntimeHead() {
   runtimeHeadNode = runtimePlayerModel ? findRuntimeHeadNode(runtimePlayerModel) : null;
-  lookPitch = THREE.MathUtils.clamp(lookPitch, CONFIG.minPitch, CONFIG.maxPitch);
+  firstPersonController.clampLookPitchToBounds();
 
   if (!runtimeHeadNode) {
     syncCameraToHeadAnchor();
     return;
   }
 
-  const headPitch = -lookPitch;
+  const headPitch = -firstPersonController.getLookPitch();
   runtimeHeadPitchQuaternion.setFromAxisAngle(runtimeHeadPitchAxis, headPitch);
   runtimeHeadNeutralQuaternion.copy(runtimeHeadNode.quaternion);
   runtimeHeadNeutralQuaternion.multiply(runtimeHeadPitchQuaternion.invert());
@@ -413,6 +485,7 @@ function applyRuntimePlayerScale(nextScale) {
   }
 
   runtimePlayerModel.scale.setScalar(CONFIG.playerModelScale);
+  playerVisualRoot.scale.set(1, firstPersonController.getIsCrouched() ? CONFIG.crouchHeight : 1, 1);
   centerAndGroundModel(runtimePlayerModel);
   syncColliderFromPlayerModel(runtimePlayerModel);
   bindCameraToRuntimeHead();
@@ -427,6 +500,7 @@ function setRuntimePlayerModelVisibility(visible) {
 
 function collectFirstPersonOccluderMeshes(root) {
   runtimeFirstPersonHiddenMeshes.length = 0;
+  const headOccluderTokens = ['head'];
 
   root.traverse((node) => {
     if (!node?.isMesh || !node?.name) {
@@ -434,7 +508,7 @@ function collectFirstPersonOccluderMeshes(root) {
     }
 
     const normalizedName = String(node.name).trim().toLowerCase();
-    if (normalizedName.includes('head')) {
+    if (headOccluderTokens.some((token) => normalizedName.includes(token))) {
       runtimeFirstPersonHiddenMeshes.push(node);
     }
   });
@@ -484,7 +558,7 @@ function initializeRuntimePlayerLimbState(root) {
   runtimePlayerLimbState.walkCycleSeconds = 0;
 }
 
-function blendLimbSwing(limb, xRadians, deltaSeconds) {
+function blendLimbSwing(limb, xRadians, deltaSeconds, blendSpeed = 12) {
   if (!limb?.node || !limb?.restRotation) {
     return;
   }
@@ -493,7 +567,7 @@ function blendLimbSwing(limb, xRadians, deltaSeconds) {
   limbOffsetRotation.setFromEuler(limbOffsetEuler);
   limbTargetRotation.copy(limb.restRotation).multiply(limbOffsetRotation);
 
-  const blendFactor = 1 - Math.exp(-12 * deltaSeconds);
+  const blendFactor = 1 - Math.exp(-Math.max(1, blendSpeed) * deltaSeconds);
   limb.node.quaternion.slerp(limbTargetRotation, blendFactor);
 }
 
@@ -502,40 +576,45 @@ function updateRuntimePlayerWalkAnimation(deltaSeconds) {
     return;
   }
 
-  const isMovingOnGround = playerIsMovingHorizontally && canJump && !editorModeEnabled;
-  let leftArmSwing = 0;
-  let rightArmSwing = 0;
-  let leftLegSwing = 0;
-  let rightLegSwing = 0;
-
+  const isMovingOnGround = firstPersonController.getMovementState().isMovingHorizontally && canJump && !editorModeEnabled;
   if (isMovingOnGround) {
-    const cycleHz = THREE.MathUtils.lerp(2.1, 4.1, playerMovementSpeedNormalized);
-    runtimePlayerLimbState.walkCycleSeconds += deltaSeconds * cycleHz;
-    const phase = runtimePlayerLimbState.walkCycleSeconds * Math.PI * 2;
-    const armAmplitude = THREE.MathUtils.lerp(0.64, 1.84, playerMovementSpeedNormalized);
-    const legAmplitude = THREE.MathUtils.lerp(0.88, 2.36, playerMovementSpeedNormalized);
+    runtimePlayerLimbState.walkCycleSeconds += deltaSeconds * 10;
+    const swing = Math.sin(runtimePlayerLimbState.walkCycleSeconds);
+    const armForwardBias = THREE.MathUtils.degToRad(-30);
 
-    leftArmSwing = -Math.sin(phase) * armAmplitude;
-    rightArmSwing = Math.sin(phase) * armAmplitude;
-    leftLegSwing = Math.sin(phase) * legAmplitude;
-    rightLegSwing = -Math.sin(phase) * legAmplitude;
+    blendLimbSwing(runtimePlayerLimbState.leftLeg, swing * THREE.MathUtils.degToRad(60), deltaSeconds, 20);
+    blendLimbSwing(runtimePlayerLimbState.rightLeg, -swing * THREE.MathUtils.degToRad(60), deltaSeconds, 20);
+    blendLimbSwing(
+      runtimePlayerLimbState.leftArm,
+      (-swing * THREE.MathUtils.degToRad(40)) + armForwardBias,
+      deltaSeconds,
+      20
+    );
+    blendLimbSwing(
+      runtimePlayerLimbState.rightArm,
+      (swing * THREE.MathUtils.degToRad(40)) + armForwardBias,
+      deltaSeconds,
+      20
+    );
+    return;
   }
 
-  blendLimbSwing(runtimePlayerLimbState.leftArm, leftArmSwing, deltaSeconds);
-  blendLimbSwing(runtimePlayerLimbState.rightArm, rightArmSwing, deltaSeconds);
-  blendLimbSwing(runtimePlayerLimbState.leftLeg, leftLegSwing, deltaSeconds);
-  blendLimbSwing(runtimePlayerLimbState.rightLeg, rightLegSwing, deltaSeconds);
+  runtimePlayerLimbState.walkCycleSeconds = 0;
+  blendLimbSwing(runtimePlayerLimbState.leftLeg, 0, deltaSeconds, 5);
+  blendLimbSwing(runtimePlayerLimbState.rightLeg, 0, deltaSeconds, 5);
+  blendLimbSwing(runtimePlayerLimbState.leftArm, THREE.MathUtils.degToRad(45), deltaSeconds, 5);
+  blendLimbSwing(runtimePlayerLimbState.rightArm, THREE.MathUtils.degToRad(45), deltaSeconds, 5);
 }
 
 async function initializeRuntimePlayerModel() {
   try {
+    const modelPath = selectedPlayerModelPath || DEFAULT_PLAYER_MODEL_PATH;
     const gltf = await new Promise((resolve, reject) => {
-      playerModelLoader.load(PLAYER_MODEL_PATH, resolve, undefined, reject);
+      playerModelLoader.load(modelPath, resolve, undefined, reject);
     });
 
     const model = gltf.scene;
     model.name = 'runtime-player-model';
-    model.rotation.y = Math.PI;
 
     model.traverse((node) => {
       if (!node.isMesh) {
@@ -560,14 +639,23 @@ async function initializeRuntimePlayerModel() {
     initializeRuntimePlayerLimbState(runtimePlayerModel);
     applyRuntimePlayerScale(CONFIG.playerModelScale);
     setRuntimePlayerModelVisibility(!editorModeEnabled);
-    setFirstPersonOccluderVisibility(true);
+    setFirstPersonOccluderVisibility(editorModeEnabled);
   } catch (error) {
-    console.warn('Failed to load runtime player model:', error);
+    console.warn('Failed to load runtime player model:', selectedPlayerModelPath, error);
   }
 }
 
 async function applyMap(nextMapData) {
   activeMapData = normalizeMapData(nextMapData);
+  const spawnPosition = activeMapData.spawnPreset?.position;
+  if (Array.isArray(spawnPosition) && spawnPosition.length >= 3) {
+    playerSpawnPosition.set(
+      Number(spawnPosition[0]) || 0,
+      Number(spawnPosition[1]) || 0,
+      Number(spawnPosition[2]) || 0
+    );
+  }
+  playerSpawnYaw = Number(activeMapData.spawnPreset?.yaw) || 0;
   applyRuntimePlayerScale(activeMapData.playerPreset?.scale ?? 1);
 
   activeRuntimeState = await applyMapManifestData(scene, playerRig, colliders, {
@@ -578,16 +666,21 @@ async function applyMap(nextMapData) {
     runtimeState: activeRuntimeState
   });
 
+  syncBlockworldVisualStyle();
+
   if (editorBridge?.setContext) {
     editorBridge.setContext(activeMapData, activeRuntimeState);
   }
+
+  CONFIG.fovNormal = camera.fov;
 
   mineZones = getMineZoneAabbs(activeRuntimeState);
   if (voxelRuntime) {
     voxelRuntime.setMineZones(mineZones);
   }
 
-  resolveGrounding();
+  resetPlayerToSpawn();
+  firstPersonController.resetSprintState();
   bindCameraToRuntimeHead();
   updateRuntimeHeadFromCamera();
   syncCameraToHeadAnchor();
@@ -604,6 +697,7 @@ async function initializeWorld() {
   atmosphereRuntime = createAtmosphereRuntime({ scene, renderer });
   atmosphereRuntime.setViewportSize?.(window.innerWidth, window.innerHeight);
   voxelRuntime = createVoxelRuntime({ scene });
+  syncBlockworldVisualStyle();
 
   try {
     const manifest = await loadMapManifest(CONFIG.mapManifestPath);
@@ -636,7 +730,7 @@ function resetInputState() {
 function setEditorModeActive(enabled) {
   editorModeEnabled = enabled;
   setRuntimePlayerModelVisibility(!enabled);
-  setFirstPersonOccluderVisibility(true);
+  setFirstPersonOccluderVisibility(enabled);
 
   if (enabled) {
     if (isPointerLocked() && document.exitPointerLock) {
@@ -644,6 +738,7 @@ function setEditorModeActive(enabled) {
     }
 
     resetInputState();
+    firstPersonController.handleGameplayInactive();
     playerVelocity.set(0, 0, 0);
   }
 
@@ -752,7 +847,7 @@ function renderWalletState(walletState) {
 
   if (walletStatusValue) {
     if (walletState.connecting) {
-      walletStatusValue.textContent = 'Connecting...';
+      walletStatusValue.textContent = walletState.disconnecting ? 'Disconnecting...' : 'Connecting...';
     } else if (walletState.connected) {
       walletStatusValue.textContent = `Connected (${walletState.connectedWalletName})`;
     } else if (walletState.error) {
@@ -767,7 +862,9 @@ function renderWalletState(walletState) {
   if (walletConnectButton) {
     walletConnectButton.disabled =
       walletActionInFlight || walletState.connecting || walletState.connected || noConnectableWallets;
-    walletConnectButton.textContent = walletState.connecting ? 'Connecting...' : 'Connect';
+    walletConnectButton.textContent = walletState.connecting
+      ? (walletState.disconnecting ? 'Disconnecting...' : 'Connecting...')
+      : 'Connect';
   }
 
   if (walletDisconnectButton) {
@@ -1031,6 +1128,9 @@ function onPointerLockChange() {
   if (crosshair) {
     crosshair.hidden = !gameplayActive;
   }
+  if (!gameplayActive) {
+    firstPersonController.handleGameplayInactive();
+  }
 }
 
 function requestPointerLock() {
@@ -1039,32 +1139,28 @@ function requestPointerLock() {
   }
 }
 
-function setToward(dx, dy, speed) {
-  playerRig.rotateY(-dx * speed * CONFIG.mouseSensitivity);
-  lookPitch = THREE.MathUtils.clamp(
-    lookPitch + (-dy * speed * CONFIG.mouseSensitivity),
-    CONFIG.minPitch,
-    CONFIG.maxPitch
-  );
-  updateRuntimeHeadFromCamera();
-  syncCameraToHeadAnchor();
-}
-
 function onMouseMove(event) {
   if (!isPointerLocked()) {
     return;
   }
 
-  setToward(event.movementX, event.movementY, CONFIG.mouseLookSpeed);
+  firstPersonController.setToward(event.movementX, event.movementY, CONFIG.mouseLookSpeed);
 }
 
 function onMouseDown(event) {
   if (!isPointerLocked() || editorModeEnabled) {
     return;
   }
+
+  if (event.button === 2) {
+    firstPersonController.setZoomed(true);
+    return;
+  }
+
   if (event.button !== 0) {
     return;
   }
+
   if (!voxelRuntime || !streamRuntime) {
     return;
   }
@@ -1087,6 +1183,18 @@ function onMouseDown(event) {
       voxelRuntime.setVoxelValue(voxel, previousValue);
     }
   });
+}
+
+function onMouseUp(event) {
+  if (event.button === 2) {
+    firstPersonController.setZoomed(false);
+  }
+}
+
+function onContextMenu(event) {
+  if (isPointerLocked()) {
+    event.preventDefault();
+  }
 }
 
 function onInstructionsKeydown(event) {
@@ -1127,9 +1235,22 @@ function onKeyDown(event) {
       inputState.shiftPressed = true;
       break;
 
+    case 'KeyC':
+    case 'ControlLeft':
+    case 'ControlRight':
+      if (CONFIG.holdToCrouch) {
+        firstPersonController.setCrouched(true);
+      } else if (event.repeat !== true) {
+        firstPersonController.setCrouched(!firstPersonController.getIsCrouched());
+      }
+      break;
+
     case 'Space':
       inputState.spacePressed = true;
       if (canJump) {
+        if (firstPersonController.getIsCrouched() && !CONFIG.holdToCrouch) {
+          firstPersonController.setCrouched(false);
+        }
         playerVelocity.y = CONFIG.jumpVelocity;
         canJump = false;
       }
@@ -1166,6 +1287,14 @@ function onKeyUp(event) {
     case 'ShiftLeft':
     case 'ShiftRight':
       inputState.shiftPressed = false;
+      break;
+
+    case 'KeyC':
+    case 'ControlLeft':
+    case 'ControlRight':
+      if (CONFIG.holdToCrouch) {
+        firstPersonController.setCrouched(false);
+      }
       break;
 
     case 'Space':
@@ -1205,6 +1334,8 @@ function bindEvents() {
   document.addEventListener('keyup', onKeyUp);
   document.addEventListener('mousemove', onMouseMove);
   document.addEventListener('mousedown', onMouseDown);
+  document.addEventListener('mouseup', onMouseUp);
+  document.addEventListener('contextmenu', onContextMenu);
   window.addEventListener('resize', onResize);
   window.addEventListener('beforeunload', teardownWalletConnector);
 }
@@ -1222,38 +1353,6 @@ function updateFpsCounter(deltaMs) {
     fpsFrames = 0;
     fpsWindowMs = 0;
   }
-}
-
-function updateHorizontalMovement(deltaSeconds) {
-  camera.getWorldDirection(cameraDirection);
-  const angle = 2 * Math.PI - (Math.atan2(cameraDirection.z, cameraDirection.x) + Math.PI / 2);
-
-  moveDirection.set(0, 0, 0);
-  if (inputState.fwdPressed) {
-    moveDirection.add(DIR_FWD);
-  }
-  if (inputState.bkdPressed) {
-    moveDirection.add(DIR_BKD);
-  }
-  if (inputState.lftPressed) {
-    moveDirection.add(DIR_LFT);
-  }
-  if (inputState.rgtPressed) {
-    moveDirection.add(DIR_RGT);
-  }
-
-  if (moveDirection.lengthSq() === 0) {
-    playerIsMovingHorizontally = false;
-    playerMovementSpeedNormalized = 0;
-    return;
-  }
-
-  const runSpeed = CONFIG.playerSpeed * CONFIG.runMultiplier;
-  const speed = inputState.shiftPressed ? runSpeed : CONFIG.playerSpeed;
-  playerIsMovingHorizontally = true;
-  playerMovementSpeedNormalized = THREE.MathUtils.clamp(speed / runSpeed, 0, 1);
-  moveDirection.normalize().applyAxisAngle(upVector, angle);
-  playerRig.position.addScaledVector(moveDirection, speed * deltaSeconds);
 }
 
 function resolveHorizontalPenetration(point, box, radius, outPush) {
@@ -1299,9 +1398,72 @@ function resolveHorizontalPenetration(point, box, radius, outPush) {
   return true;
 }
 
+function canSampleCollider(point, box, radius) {
+  if (point.y < box.min.y || point.y > box.max.y) {
+    return false;
+  }
+
+  return !(
+    point.x < box.min.x - radius
+    || point.x > box.max.x + radius
+    || point.z < box.min.z - radius
+    || point.z > box.max.z + radius
+  );
+}
+
+function resolveHorizontalMeshPenetration(point, collider, radius, outPush) {
+  outPush.set(0, 0, 0);
+  bodyColliderRayOrigin.copy(point);
+
+  let hasPenetration = false;
+  let maxPenetration = 0;
+
+  for (const direction of HORIZONTAL_COLLISION_RAY_DIRECTIONS) {
+    bodyColliderRayDirection.copy(direction);
+    bodyColliderRaycaster.set(bodyColliderRayOrigin, bodyColliderRayDirection);
+    bodyColliderRaycaster.far = radius + 1e-3;
+
+    const intersections = bodyColliderRaycaster.intersectObject(collider, true);
+    if (intersections.length === 0) {
+      continue;
+    }
+
+    const hit = intersections[0];
+    const penetration = radius - hit.distance;
+    if (penetration <= 0) {
+      continue;
+    }
+
+    bodyColliderMeshPushDirection.copy(point).sub(hit.point);
+    bodyColliderMeshPushDirection.y = 0;
+    if (bodyColliderMeshPushDirection.lengthSq() <= 1e-10) {
+      bodyColliderMeshPushDirection.copy(bodyColliderRayDirection).multiplyScalar(-1);
+    } else {
+      bodyColliderMeshPushDirection.normalize();
+    }
+
+    const pushAmount = penetration + 1e-4;
+    outPush.addScaledVector(bodyColliderMeshPushDirection, pushAmount);
+    maxPenetration = Math.max(maxPenetration, pushAmount);
+    hasPenetration = true;
+  }
+
+  if (!hasPenetration || outPush.lengthSq() <= 1e-10) {
+    return false;
+  }
+
+  const pushLength = outPush.length();
+  if (pushLength > maxPenetration && maxPenetration > 0) {
+    outPush.multiplyScalar(maxPenetration / pushLength);
+  }
+  outPush.y = 0;
+  return true;
+}
+
 function resolvePlayerBodyCollisions() {
   const radius = CONFIG.playerColliderRadius;
-  const height = Math.max(CONFIG.playerColliderHeight, radius * 2 + 0.01);
+  const crouchScale = firstPersonController.getIsCrouched() ? CONFIG.crouchHeight : 1;
+  const height = Math.max(CONFIG.playerColliderHeight * crouchScale, radius * 2 + 0.01);
 
   for (let iteration = 0; iteration < CONFIG.playerCollisionIterations; iteration += 1) {
     let resolvedAny = false;
@@ -1319,17 +1481,30 @@ function resolvePlayerBodyCollisions() {
         continue;
       }
 
+      const colliderShape = collider?.userData?.colliderShape === 'mesh' ? 'mesh' : 'bounds';
+
       for (const sampleY of sampleYs) {
-        if (sampleY < bodyColliderBox.min.y || sampleY > bodyColliderBox.max.y) {
+        const samplePoint = bodyColliderSample.set(playerRig.position.x, sampleY, playerRig.position.z);
+        if (!canSampleCollider(samplePoint, bodyColliderBox, radius)) {
           continue;
         }
 
-        const samplePoint = bodyColliderSample.set(playerRig.position.x, sampleY, playerRig.position.z);
-        if (!resolveHorizontalPenetration(samplePoint, bodyColliderBox, radius, bodyColliderPush)) {
+        const resolved = colliderShape === 'mesh'
+          ? resolveHorizontalMeshPenetration(samplePoint, collider, radius, bodyColliderPush)
+            || resolveHorizontalPenetration(samplePoint, bodyColliderBox, radius, bodyColliderPush)
+          : resolveHorizontalPenetration(samplePoint, bodyColliderBox, radius, bodyColliderPush);
+
+        if (!resolved) {
           continue;
         }
 
         playerRig.position.add(bodyColliderPush);
+        if (bodyColliderPush.x !== 0 && Math.sign(bodyColliderPush.x) !== Math.sign(playerVelocity.x)) {
+          playerVelocity.x = 0;
+        }
+        if (bodyColliderPush.z !== 0 && Math.sign(bodyColliderPush.z) !== Math.sign(playerVelocity.z)) {
+          playerVelocity.z = 0;
+        }
         resolvedAny = true;
       }
     }
@@ -1368,7 +1543,9 @@ function resolveGrounding() {
 }
 
 function updatePlayer(deltaSeconds) {
-  updateHorizontalMovement(deltaSeconds);
+  firstPersonController.updateHorizontalMovement(playerVelocity);
+  playerRig.position.x += playerVelocity.x * deltaSeconds;
+  playerRig.position.z += playerVelocity.z * deltaSeconds;
   resolvePlayerBodyCollisions();
 
   playerVelocity.y += CONFIG.gravity * deltaSeconds;
@@ -1378,21 +1555,41 @@ function updatePlayer(deltaSeconds) {
   resolvePlayerBodyCollisions();
 
   if (playerRig.position.y < CONFIG.fallResetHeight) {
-    playerRig.position.set(0, 0, 10);
-    playerVelocity.set(0, 0, 0);
-    canJump = true;
+    resetPlayerToSpawn();
   }
+}
+
+function resetPlayerToSpawn() {
+  playerRig.position.copy(playerSpawnPosition);
+  playerRig.rotation.y = playerSpawnYaw;
+  playerVelocity.set(0, 0, 0);
+  firstPersonController.resetForSpawn();
+  canJump = false;
+
+  resolveGrounding();
+  resolvePlayerBodyCollisions();
 }
 
 function animate() {
   const nowMs = performance.now();
   const rawDeltaSeconds = (nowMs - prevTimeMs) / 1000;
   const deltaSeconds = Math.min(rawDeltaSeconds, CONFIG.maxDeltaSeconds);
+  const gameplayActive = isPointerLocked() && !editorModeEnabled;
 
   updateFpsCounter(deltaSeconds * 1000);
+  firstPersonController.update(deltaSeconds, { gameplayActive, canJump });
 
-  if (isPointerLocked()) {
-    updatePlayer(deltaSeconds);
+  if (gameplayActive) {
+    fixedStepAccumulator = Math.min(fixedStepAccumulator + deltaSeconds, CONFIG.fixedTimeStep * CONFIG.maxFixedStepsPerFrame);
+    let steps = 0;
+    while (fixedStepAccumulator >= CONFIG.fixedTimeStep && steps < CONFIG.maxFixedStepsPerFrame) {
+      updatePlayer(CONFIG.fixedTimeStep);
+      fixedStepAccumulator -= CONFIG.fixedTimeStep;
+      steps += 1;
+    }
+  } else {
+    fixedStepAccumulator = 0;
+    firstPersonController.resetMovementState();
   }
 
   if (editorBridge?.update) {
@@ -1424,20 +1621,7 @@ async function startGame() {
   }
   postProcessRuntime = createPostProcessRuntime({ renderer, scene, camera });
   postProcessRuntime.setSize(window.innerWidth, window.innerHeight);
-  postProcessRuntime.setPeakStyle?.({
-    saturation: 1.06,
-    contrast: 1.1,
-    warmth: 0.26,
-    shadowLift: 0.058,
-    highlightSoftness: 0.42,
-    blackPoint: 0.045,
-    vignetteStrength: 0.2,
-    vignetteSoftness: 0.6,
-    grainAmount: 0.011,
-    bloomStrength: 0.27,
-    bloomRadius: 0.45,
-    bloomThreshold: 0.87
-  });
+  syncBlockworldVisualStyle();
   await mountDevEditorIfEnabled();
   resolveGrounding();
   onPointerLockChange();
@@ -1450,16 +1634,30 @@ async function bootstrap() {
 
   await initializeWalletConnector();
 
+  /**
+   * @param {string | undefined} nextModelPath
+   */
+  function setSelectedPlayerModelPath(nextModelPath) {
+    const normalized = typeof nextModelPath === 'string' ? nextModelPath.trim() : '';
+    selectedPlayerModelPath = normalized || DEFAULT_PLAYER_MODEL_PATH;
+  }
+
   const router = initRouter({
     onLobby() {
       mountLobby({
         walletGateway,
-        onEnterGame() {
+        initialSelectedModelPath: selectedPlayerModelPath,
+        onEnterGame(nextModelPath) {
+          setSelectedPlayerModelPath(nextModelPath);
           router.goToGame();
         }
       });
     },
     onGame() {
+      if (!walletGateway?.getState?.().connected) {
+        window.location.hash = '#/lobby';
+        return;
+      }
       void startGame();
     }
   });

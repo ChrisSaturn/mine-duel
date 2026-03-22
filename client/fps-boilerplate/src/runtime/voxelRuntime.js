@@ -1,4 +1,9 @@
 import * as THREE from 'three';
+import {
+  DEFAULT_BLOCKWORLD_BIOME,
+  getBlockworldBiomePreset,
+  normalizeBlockworldBiome
+} from './blockworldStyleRuntime.js';
 
 const DEFAULT_CHUNK_SIZE = 16;
 const DEFAULT_SUBCHUNK_HEIGHT = 16;
@@ -49,17 +54,124 @@ function decodeChunkBytes(base64) {
   return out;
 }
 
-function resolveColor(value) {
-  if (value === 4) {
-    return [0.38, 0.78, 0.95];
+function clamp01(value) {
+  if (value < 0) {
+    return 0;
   }
-  if (value === 3) {
-    return [0.95, 0.8, 0.38];
+  if (value > 1) {
+    return 1;
   }
-  if (value === 2) {
-    return [0.78, 0.78, 0.78];
+  return value;
+}
+
+function hexToRgbArray(hex) {
+  const color = new THREE.Color(hex);
+  return [color.r, color.g, color.b];
+}
+
+function createVoxelStyleState(biomePreset) {
+  const style = biomePreset?.voxel || {};
+  const palette = {};
+
+  for (const [key, value] of Object.entries(style.palette || {})) {
+    palette[String(key)] = hexToRgbArray(value);
   }
-  return [0.47, 0.33, 0.24];
+
+  const rawDirection = Array.isArray(style.sunDirection) ? style.sunDirection : [0.58, 0.0, -0.44];
+  const sunDirection = [
+    Number(rawDirection[0]) || 0,
+    Number(rawDirection[1]) || 0,
+    Number(rawDirection[2]) || 0
+  ];
+  const directionLength = Math.hypot(sunDirection[0], sunDirection[1], sunDirection[2]) || 1;
+
+  return {
+    palette,
+    topWarmTint: hexToRgbArray(style.topWarmTint ?? 0xffdfad),
+    sideCoolTint: hexToRgbArray(style.sideCoolTint ?? 0x7a9eb8),
+    bottomShadowTint: hexToRgbArray(style.bottomShadowTint ?? 0x4f6777),
+    heightHighTint: hexToRgbArray(style.heightHighTint ?? 0xc3dd9f),
+    heightLowTint: hexToRgbArray(style.heightLowTint ?? 0x556070),
+    topBrightness: Number.isFinite(style.topBrightness) ? style.topBrightness : 1.16,
+    sideBrightness: Number.isFinite(style.sideBrightness) ? style.sideBrightness : 0.86,
+    bottomBrightness: Number.isFinite(style.bottomBrightness) ? style.bottomBrightness : 0.62,
+    sideSunBoost: Number.isFinite(style.sideSunBoost) ? style.sideSunBoost : 0.2,
+    sideShadowTint: Number.isFinite(style.sideShadowTint) ? style.sideShadowTint : 0.28,
+    topWarmTintAmount: Number.isFinite(style.topWarmTintAmount) ? style.topWarmTintAmount : 0.18,
+    bottomTintAmount: Number.isFinite(style.bottomTintAmount) ? style.bottomTintAmount : 0.34,
+    heightHighAmount: Number.isFinite(style.heightHighAmount) ? style.heightHighAmount : 0.08,
+    heightLowAmount: Number.isFinite(style.heightLowAmount) ? style.heightLowAmount : 0.06,
+    heightOffset: Number.isFinite(style.heightOffset) ? style.heightOffset : 8,
+    heightRange: Number.isFinite(style.heightRange) ? style.heightRange : 32,
+    sunDirection: [
+      sunDirection[0] / directionLength,
+      sunDirection[1] / directionLength,
+      sunDirection[2] / directionLength
+    ],
+    emissive: Number.isFinite(style.emissive) ? style.emissive : 0x17221f,
+    emissiveIntensity: Number.isFinite(style.emissiveIntensity) ? style.emissiveIntensity : 0.04
+  };
+}
+
+function resolveColor(value, styleState) {
+  return styleState.palette[String(value)]
+    || styleState.palette.default
+    || [0.47, 0.33, 0.24];
+}
+
+function shadeVoxelCornerColor(baseColor, normal, y, styleState) {
+  const isTop = normal[1] > 0.5;
+  const isBottom = normal[1] < -0.5;
+
+  const sunInfluence = clamp01(
+    normal[0] * styleState.sunDirection[0]
+    + normal[1] * styleState.sunDirection[1]
+    + normal[2] * styleState.sunDirection[2]
+  );
+
+  let brightness = styleState.sideBrightness;
+  if (isTop) {
+    brightness = styleState.topBrightness;
+  } else if (isBottom) {
+    brightness = styleState.bottomBrightness;
+  } else {
+    brightness += sunInfluence * styleState.sideSunBoost;
+  }
+
+  let r = baseColor[0] * brightness;
+  let g = baseColor[1] * brightness;
+  let b = baseColor[2] * brightness;
+
+  if (isTop) {
+    const tintAmount = styleState.topWarmTintAmount;
+    r += (styleState.topWarmTint[0] - r) * tintAmount;
+    g += (styleState.topWarmTint[1] - g) * tintAmount;
+    b += (styleState.topWarmTint[2] - b) * tintAmount;
+  } else if (isBottom) {
+    const tintAmount = styleState.bottomTintAmount;
+    r += (styleState.bottomShadowTint[0] - r) * tintAmount;
+    g += (styleState.bottomShadowTint[1] - g) * tintAmount;
+    b += (styleState.bottomShadowTint[2] - b) * tintAmount;
+  } else {
+    const tintAmount = (1 - sunInfluence) * styleState.sideShadowTint;
+    r += (styleState.sideCoolTint[0] - r) * tintAmount;
+    g += (styleState.sideCoolTint[1] - g) * tintAmount;
+    b += (styleState.sideCoolTint[2] - b) * tintAmount;
+  }
+
+  const heightNorm = clamp01((y + styleState.heightOffset) / Math.max(styleState.heightRange, 1e-4));
+  const highAmount = heightNorm * styleState.heightHighAmount;
+  const lowAmount = (1 - heightNorm) * styleState.heightLowAmount;
+
+  r += (styleState.heightHighTint[0] - r) * highAmount;
+  g += (styleState.heightHighTint[1] - g) * highAmount;
+  b += (styleState.heightHighTint[2] - b) * highAmount;
+
+  r += (styleState.heightLowTint[0] - r) * lowAmount;
+  g += (styleState.heightLowTint[1] - g) * lowAmount;
+  b += (styleState.heightLowTint[2] - b) * lowAmount;
+
+  return [clamp01(r), clamp01(g), clamp01(b)];
 }
 
 function inMineZone(mineZones, voxel) {
@@ -72,9 +184,9 @@ function inMineZone(mineZones, voxel) {
       continue;
     }
     if (
-      voxel.x >= zone.min.x && voxel.x <= zone.max.x &&
-      voxel.y >= zone.min.y && voxel.y <= zone.max.y &&
-      voxel.z >= zone.min.z && voxel.z <= zone.max.z
+      voxel.x >= zone.min.x && voxel.x <= zone.max.x
+      && voxel.y >= zone.min.y && voxel.y <= zone.max.y
+      && voxel.z >= zone.min.z && voxel.z <= zone.max.z
     ) {
       return true;
     }
@@ -83,7 +195,7 @@ function inMineZone(mineZones, voxel) {
   return false;
 }
 
-function buildChunkGeometry(chunk) {
+function buildChunkGeometry(chunk, styleState) {
   const { chunkX, chunkY, chunkZ, chunkSize, subchunkHeight, bytes } = chunk;
   const dims = [chunkSize, subchunkHeight, chunkSize];
 
@@ -197,12 +309,13 @@ function buildChunkGeometry(chunk) {
 
           const normal = [0, 0, 0];
           normal[d] = cell.sign;
-          const color = resolveColor(cell.value);
+          const baseColor = resolveColor(cell.value, styleState);
 
           for (const corner of corners) {
+            const shadedColor = shadeVoxelCornerColor(baseColor, normal, corner[1], styleState);
             positions.push(corner[0], corner[1], corner[2]);
             normals.push(normal[0], normal[1], normal[2]);
-            colors.push(color[0], color[1], color[2]);
+            colors.push(shadedColor[0], shadedColor[1], shadedColor[2]);
           }
 
           indices.push(
@@ -242,50 +355,64 @@ export function createVoxelRuntime({ scene }) {
   root.name = 'voxel-runtime-root';
   scene.add(root);
 
-  const material = new THREE.MeshStandardMaterial({
+  let activeBiome = DEFAULT_BLOCKWORLD_BIOME;
+  let styleState = createVoxelStyleState(getBlockworldBiomePreset(activeBiome));
+
+  const material = new THREE.MeshLambertMaterial({
     vertexColors: true,
-    roughness: 0.85,
-    metalness: 0.04
+    emissive: new THREE.Color(styleState.emissive),
+    emissiveIntensity: styleState.emissiveIntensity
   });
 
   const chunks = new Map();
   let mineZones = [];
 
+  function applyMaterialStyle() {
+    material.emissive.setHex(styleState.emissive);
+    material.emissiveIntensity = styleState.emissiveIntensity;
+    material.needsUpdate = true;
+  }
+
   function getChunkRecord(chunkId) {
     return chunks.get(chunkId) || null;
   }
 
-  function upsertChunk(chunkData) {
-    const record = chunks.get(chunkData.chunkId) || {
-      chunkId: chunkData.chunkId,
-      chunkX: chunkData.chunkX,
-      chunkY: chunkData.chunkY,
-      chunkZ: chunkData.chunkZ,
-      chunkSize: chunkData.chunk_size || chunkData.chunkSize || DEFAULT_CHUNK_SIZE,
-      subchunkHeight: chunkData.subchunk_height || chunkData.subchunkHeight || DEFAULT_SUBCHUNK_HEIGHT,
-      bytes: null,
-      mesh: null
-    };
-
-    record.chunkX = chunkData.chunkX;
-    record.chunkY = chunkData.chunkY;
-    record.chunkZ = chunkData.chunkZ;
-    record.chunkSize = chunkData.chunk_size || chunkData.chunkSize || record.chunkSize;
-    record.subchunkHeight = chunkData.subchunk_height || chunkData.subchunkHeight || record.subchunkHeight;
-    record.bytes = decodeChunkBytes(chunkData.voxelBytesBase64 || chunkData.voxel_bytes_base64);
-
-    const geometry = buildChunkGeometry(record);
+  function rebuildChunkMesh(record) {
+    const geometry = buildChunkGeometry(record, styleState);
     if (!record.mesh) {
       record.mesh = new THREE.Mesh(geometry, material);
       record.mesh.castShadow = true;
       record.mesh.receiveShadow = true;
       record.mesh.frustumCulled = true;
       root.add(record.mesh);
-    } else {
-      record.mesh.geometry.dispose();
-      record.mesh.geometry = geometry;
+      return;
     }
 
+    record.mesh.geometry.dispose();
+    record.mesh.geometry = geometry;
+  }
+
+  function upsertChunk(chunkData) {
+    const fallbackChunkCoords = parseChunkId(chunkData.chunkId);
+    const record = chunks.get(chunkData.chunkId) || {
+      chunkId: chunkData.chunkId,
+      chunkX: fallbackChunkCoords.chunkX,
+      chunkY: fallbackChunkCoords.chunkY,
+      chunkZ: fallbackChunkCoords.chunkZ,
+      chunkSize: chunkData.chunk_size || chunkData.chunkSize || DEFAULT_CHUNK_SIZE,
+      subchunkHeight: chunkData.subchunk_height || chunkData.subchunkHeight || DEFAULT_SUBCHUNK_HEIGHT,
+      bytes: null,
+      mesh: null
+    };
+
+    record.chunkX = Number.isFinite(chunkData.chunkX) ? chunkData.chunkX : record.chunkX;
+    record.chunkY = Number.isFinite(chunkData.chunkY) ? chunkData.chunkY : record.chunkY;
+    record.chunkZ = Number.isFinite(chunkData.chunkZ) ? chunkData.chunkZ : record.chunkZ;
+    record.chunkSize = chunkData.chunk_size || chunkData.chunkSize || record.chunkSize;
+    record.subchunkHeight = chunkData.subchunk_height || chunkData.subchunkHeight || record.subchunkHeight;
+    record.bytes = decodeChunkBytes(chunkData.voxelBytesBase64 || chunkData.voxel_bytes_base64);
+
+    rebuildChunkMesh(record);
     chunks.set(record.chunkId, record);
   }
 
@@ -323,10 +450,7 @@ export function createVoxelRuntime({ scene }) {
     }
 
     record.bytes[index] = value;
-
-    const geometry = buildChunkGeometry(record);
-    record.mesh.geometry.dispose();
-    record.mesh.geometry = geometry;
+    rebuildChunkMesh(record);
     return true;
   }
 
@@ -398,6 +522,24 @@ export function createVoxelRuntime({ scene }) {
     return [...mineZones];
   }
 
+  function setBiome(nextBiome) {
+    const normalized = normalizeBlockworldBiome(nextBiome);
+    if (normalized === activeBiome) {
+      return;
+    }
+
+    activeBiome = normalized;
+    styleState = createVoxelStyleState(getBlockworldBiomePreset(activeBiome));
+    applyMaterialStyle();
+
+    for (const record of chunks.values()) {
+      if (!record?.bytes) {
+        continue;
+      }
+      rebuildChunkMesh(record);
+    }
+  }
+
   function dispose() {
     for (const record of chunks.values()) {
       if (record.mesh) {
@@ -418,6 +560,8 @@ export function createVoxelRuntime({ scene }) {
     raycastMine,
     setMineZones,
     getMineZones,
+    setBiome,
+    getBiome: () => activeBiome,
     dispose
   };
 }
