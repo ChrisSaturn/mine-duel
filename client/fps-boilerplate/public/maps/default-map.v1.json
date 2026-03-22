@@ -1,0 +1,60 @@
+{
+  "version": 1,
+  "objects": [
+    {
+      "id": "base-plane-001",
+      "template": "primitive-plane",
+      "position": [
+        0,
+        0,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "scale": [
+        260,
+        1,
+        260
+      ]
+    }
+  ],
+  "cameraPreset": {
+    "localOffset": [
+      0,
+      1.62,
+      0
+    ],
+    "pitchMin": -1.5708,
+    "pitchMax": 1.5708,
+    "fov": 70
+  },
+  "playerPreset": {
+    "scale": 1.6
+  },
+  "hitboxes": [
+    {
+      "id": "mine-zone-001",
+      "type": "box",
+      "position": [
+        0,
+        7,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "attachToObjectId": null,
+      "layer": "mine-zone",
+      "size": [
+        24,
+        14,
+        24
+      ]
+    }
+  ]
+}

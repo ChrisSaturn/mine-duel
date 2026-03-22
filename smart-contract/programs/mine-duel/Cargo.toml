@@ -1,0 +1,22 @@
+[package]
+name = "mine-duel"
+version = "0.1.0"
+description = "Mine Duel v1: on-chain wagered duel with MagicBlock ER + VRF + session-key mining"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "mine_duel"
+
+[features]
+default = []
+cpi = ["no-entrypoint"]
+no-entrypoint = []
+no-idl = []
+idl-build = ["anchor-lang/idl-build"]
+
+[dependencies]
+anchor-lang = "0.32.1"
+ephemeral-rollups-sdk = { version = "0.6.5", features = ["anchor", "disable-realloc"] }
+ephemeral-vrf-sdk = { version = "0.2.1", features = ["anchor"] }
+session-keys = "2.0.3"

@@ -1,0 +1,197 @@
+@font-face {
+  font-family: "Minecraft";
+  src: url("/fonts/minecraft.ttf") format("truetype");
+  font-display: swap;
+}
+
+:root {
+  color-scheme: dark;
+  font-family: "Minecraft", "IBM Plex Sans", "Segoe UI", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #05070c;
+}
+
+canvas {
+  display: block;
+}
+
+#hud {
+  position: fixed;
+  top: 1rem;
+  left: 1rem;
+  z-index: 20;
+  min-width: 250px;
+  max-width: min(92vw, 420px);
+  padding: 0.75rem 0.9rem;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 0.5rem;
+  background: rgba(5, 7, 12, 0.58);
+  backdrop-filter: blur(8px);
+}
+
+#hud h1 {
+  margin: 0 0 0.4rem;
+  font-size: 1rem;
+  letter-spacing: 0.03em;
+}
+
+#hud p {
+  margin: 0;
+  font-size: 0.82rem;
+  opacity: 0.9;
+}
+
+#hud p + p {
+  margin-top: 0.35rem;
+}
+
+#fps {
+  font-family: "IBM Plex Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+  opacity: 1;
+}
+
+#fps-value {
+  display: inline-block;
+  min-width: 2ch;
+  text-align: right;
+  color: #d9f5b2;
+}
+
+#wallet-panel {
+  margin-top: 0.7rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.16);
+}
+
+#wallet-panel p + p {
+  margin-top: 0.25rem;
+}
+
+.wallet-field {
+  display: grid;
+  gap: 0.3rem;
+  margin-bottom: 0.45rem;
+}
+
+.wallet-field > span {
+  font-size: 0.78rem;
+  opacity: 0.9;
+}
+
+#wallet-select {
+  width: 100%;
+  min-height: 2rem;
+  padding: 0.34rem 0.45rem;
+  border-radius: 0.35rem;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.08);
+  color: #f4f7ff;
+}
+
+#wallet-select:disabled {
+  opacity: 0.7;
+}
+
+.wallet-actions {
+  display: flex;
+  gap: 0.45rem;
+  margin-bottom: 0.45rem;
+}
+
+.wallet-actions button {
+  min-height: 2rem;
+  padding: 0.35rem 0.62rem;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 0.35rem;
+  background: rgba(255, 255, 255, 0.08);
+  color: #f4f7ff;
+  cursor: pointer;
+  font-size: 0.78rem;
+}
+
+.wallet-actions button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.wallet-actions button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+#wallet-status-value {
+  color: #cde8ff;
+}
+
+#wallet-address-value {
+  font-family: "IBM Plex Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+  color: #f4f7ff;
+}
+
+#wallet-rpc-value {
+  display: inline-block;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: bottom;
+}
+
+#stream-status-value {
+  color: #d6e9ff;
+}
+
+@media (max-width: 640px) {
+  #hud {
+    top: 0.5rem;
+    left: 0.5rem;
+    right: 0.5rem;
+    min-width: 0;
+  }
+}
+
+#blocker {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.28);
+}
+
+#instructions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 1rem 1.3rem;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 0.75rem;
+  background: rgba(10, 15, 26, 0.88);
+  color: #f4f7ff;
+  cursor: pointer;
+  text-align: center;
+  user-select: none;
+}
+
+#instructions strong {
+  font-size: 1rem;
+  letter-spacing: 0.03em;
+}
+
+#instructions span {
+  font-size: 0.82rem;
+  opacity: 0.92;
+}

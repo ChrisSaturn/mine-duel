@@ -1,0 +1,159 @@
+/* ═══════════════════════════════════════════════════════════════
+   NINEPATCH  –  CSS Grid 9-patch using kenney-ui-pack-pixel sprites
+   ═══════════════════════════════════════════════════════════════
+
+   Each 9-patch element needs exactly 9 child cells in this order:
+     TL  TC  TR
+     ML  MC  MR       ← MC holds the actual content
+     BL  BC  BR
+
+   Corners  → fixed tile size, no-repeat
+   Edges    → 1fr, repeat along one axis
+   Center   → 1fr × 1fr, repeat both axes
+
+   Available tilesets (each folder = one 9-patch set):
+     .np--s0   tile_0000/   warm tan panel  (plain brown border)
+     .np--s1   tile_0007/   warm tan panel  (inner bevel / shadow)
+     .np--s2   tile_0031/   warm tan panel  (alternate corner detail)
+
+   Usage:
+     <div class="np np--s0">
+       <span class="np__tl" aria-hidden="true"></span>
+       <span class="np__tc" aria-hidden="true"></span>
+       <span class="np__tr" aria-hidden="true"></span>
+       <span class="np__ml" aria-hidden="true"></span>
+       <div  class="np__mc">…content…</div>
+       <span class="np__mr" aria-hidden="true"></span>
+       <span class="np__bl" aria-hidden="true"></span>
+       <span class="np__bc" aria-hidden="true"></span>
+       <span class="np__br" aria-hidden="true"></span>
+     </div>
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ── Scale ─────────────────────────────────────────────────────
+   Integer multiples only — pixel art must never sub-pixel-scale.
+   Source sprites are 32 px × 32 px.
+──────────────────────────────────────────────────────────────── */
+:root {
+  --np-ts: 64px; /* 2× source → pixel-perfect on 1× and 2× screens */
+}
+
+@media (max-width: 420px) {
+  :root { --np-ts: 32px; } /* 1× on very small phones */
+}
+
+/* ── Grid ───────────────────────────────────────────────────── */
+.np {
+  display: grid;
+  grid-template-columns: var(--np-ts) 1fr var(--np-ts);
+  grid-template-rows:    var(--np-ts) auto var(--np-ts);
+  image-rendering: pixelated;
+  image-rendering: crisp-edges; /* Firefox */
+}
+
+.np > * {
+  background-size:   var(--np-ts) var(--np-ts);
+  background-repeat: no-repeat;
+}
+
+/* Corners: fixed size, single tile */
+.np__tl, .np__tr,
+.np__bl, .np__br {
+  width:  var(--np-ts);
+  height: var(--np-ts);
+}
+
+/* Horizontal edges: tile left → right */
+.np__tc, .np__bc {
+  height: var(--np-ts);
+  background-repeat: repeat-x;
+  background-position: left center;
+}
+
+/* Vertical edges: tile top → bottom */
+.np__ml, .np__mr {
+  width: var(--np-ts);
+  background-repeat: repeat-y;
+  background-position: center top;
+}
+
+/* Center: tile in both directions */
+.np__mc {
+  background-repeat: repeat;
+  background-position: 0 0;
+}
+
+/* ── Button variant ─────────────────────────────────────────── */
+button.np {
+  -webkit-appearance: none;
+  appearance: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+}
+
+button.np .np__mc {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.2em 0;
+  white-space: nowrap;
+  user-select: none;
+}
+
+button.np:hover:not(:disabled) { filter: brightness(1.1); }
+
+button.np:active:not(:disabled) {
+  transform: translateY(4px);
+  filter: brightness(0.88);
+}
+
+button.np:disabled {
+  cursor: not-allowed;
+  filter: brightness(0.5) saturate(0.3);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Tile sets — folder-based paths
+   Each folder contains 9 sprites named sequentially from the
+   folder index.  Layout within the folder:
+     +0=TL  +1=TC  +2=TR
+     +3=ML  +4=MC  +5=MR
+     +6=BL  +7=BC  +8=BR
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ── Set 0 · tile_0000/ · warm tan, plain border ─────────────── */
+.np--s0 .np__tl { background-image: url('/ui/kenney-ui-pack-pixel-adventure/tile_0000/tile_0000.png'); }
+.np--s0 .np__tc { background-image: url('/ui/kenney-ui-pack-pixel-adventure/tile_0000/tile_0001.png'); }
+.np--s0 .np__tr { background-image: url('/ui/kenney-ui-pack-pixel-adventure/tile_0000/tile_0002.png'); }
+.np--s0 .np__ml { background-image: url('/ui/kenney-ui-pack-pixel-adventure/tile_0000/tile_0003.png'); }
+.np--s0 .np__mc { background-image: url('/ui/kenney-ui-pack-pixel-adventure/tile_0000/tile_0004.png'); }
+.np--s0 .np__mr { background-image: url('/ui/kenney-ui-pack-pixel-adventure/tile_0000/tile_0005.png'); }
+.np--s0 .np__bl { background-image: url('/ui/kenney-ui-pack-pixel-adventure/tile_0000/tile_0006.png'); }
+.np--s0 .np__bc { background-image: url('/ui/kenney-ui-pack-pixel-adventure/tile_0000/tile_0007.png'); }
+.np--s0 .np__br { background-image: url('/ui/kenney-ui-pack-pixel-adventure/tile_0000/tile_0008.png'); }
+
+/* ── Set 1 · tile_0007/ · warm tan, inner bevel ──────────────── */
+.np--s1 .np__tl { background-image: url('/ui/kenney-ui-pack-pixel-adventure/tile_0007/tile_0007.png'); }
+.np--s1 .np__tc { background-image: url('/ui/kenney-ui-pack-pixel-adventure/tile_0007/tile_0008.png'); }
+.np--s1 .np__tr { background-image: url('/ui/kenney-ui-pack-pixel-adventure/tile_0007/tile_0009.png'); }
+.np--s1 .np__ml { background-image: url('/ui/kenney-ui-pack-pixel-adventure/tile_0007/tile_0010.png'); }
+.np--s1 .np__mc { background-image: url('/ui/kenney-ui-pack-pixel-adventure/tile_0007/tile_0011.png'); }
+.np--s1 .np__mr { background-image: url('/ui/kenney-ui-pack-pixel-adventure/tile_0007/tile_0012.png'); }
+.np--s1 .np__bl { background-image: url('/ui/kenney-ui-pack-pixel-adventure/tile_0007/tile_0013.png'); }
+.np--s1 .np__bc { background-image: url('/ui/kenney-ui-pack-pixel-adventure/tile_0007/tile_0014.png'); }
+.np--s1 .np__br { background-image: url('/ui/kenney-ui-pack-pixel-adventure/tile_0007/tile_0015.png'); }
+
+/* ── Set 2 · tile_0031/ · warm tan, alternate corner ─────────── */
+.np--s2 .np__tl { background-image: url('/ui/kenney-ui-pack-pixel-adventure/tile_0031/tile_0031.png'); }
+.np--s2 .np__tc { background-image: url('/ui/kenney-ui-pack-pixel-adventure/tile_0031/tile_0032.png'); }
+.np--s2 .np__tr { background-image: url('/ui/kenney-ui-pack-pixel-adventure/tile_0031/tile_0033.png'); }
+.np--s2 .np__ml { background-image: url('/ui/kenney-ui-pack-pixel-adventure/tile_0031/tile_0034.png'); }
+.np--s2 .np__mc { background-image: url('/ui/kenney-ui-pack-pixel-adventure/tile_0031/tile_0035.png'); }
+.np--s2 .np__mr { background-image: url('/ui/kenney-ui-pack-pixel-adventure/tile_0031/tile_0036.png'); }
+.np--s2 .np__bl { background-image: url('/ui/kenney-ui-pack-pixel-adventure/tile_0031/tile_0037.png'); }
+.np--s2 .np__bc { background-image: url('/ui/kenney-ui-pack-pixel-adventure/tile_0031/tile_0038.png'); }
+.np--s2 .np__br { background-image: url('/ui/kenney-ui-pack-pixel-adventure/tile_0031/tile_0039.png'); }

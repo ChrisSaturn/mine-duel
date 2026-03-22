@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MINE-DUEL</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <!-- Lobby view — shown by default via router (#/lobby) -->
+    <div id="lobby" hidden></div>
+
+    <div id="app">
+      <div id="hud">
+        <h1>MINE-DUEL FPS Boilerplate</h1>
+        <p>Click to play. Move: WASD or Arrows. Run: SHIFT. Jump: SPACE.</p>
+        <p id="fps">FPS: <span id="fps-value">--</span></p>
+        <section id="wallet-panel" aria-label="Solana wallet connector">
+          <label class="wallet-field">
+            <span>Wallet</span>
+            <select id="wallet-select" aria-label="Wallet connector"></select>
+          </label>
+          <div class="wallet-actions">
+            <button id="wallet-connect" type="button">Connect</button>
+            <button id="wallet-disconnect" type="button">Disconnect</button>
+          </div>
+          <p id="wallet-status">Status: <span id="wallet-status-value">Disconnected</span></p>
+          <p id="wallet-address">Address: <span id="wallet-address-value">--</span></p>
+          <p id="wallet-rpc">RPC: <span id="wallet-rpc-value">--</span></p>
+          <p id="stream-status">Stream: <span id="stream-status-value">Disconnected</span></p>
+        </section>
+      </div>
+
+      <div id="blocker">
+        <div id="instructions" role="button" tabindex="0" aria-label="Click to play">
+          <strong>Click To Play</strong>
+          <span>Look: Mouse | Move: WASD/Arrows | Run: Shift | Jump: Space</span>
+        </div>
+      </div>
+    </div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
