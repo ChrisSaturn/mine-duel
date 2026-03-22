@@ -278,6 +278,18 @@ export function mountLobby({ walletGateway, onCreateRoom, onEnterGame, initialSe
             <div class="lobby-wallet-menu" id="lobby-wallet-menu" role="menu" hidden>
               <button
                 class="lobby-wallet-menu-item"
+                id="lobby-connect-phantom-btn"
+                type="button"
+                role="menuitem"
+              >Phantom</button>
+              <button
+                class="lobby-wallet-menu-item"
+                id="lobby-connect-solflare-btn"
+                type="button"
+                role="menuitem"
+              >Solflare</button>
+              <button
+                class="lobby-wallet-menu-item"
                 id="lobby-disconnect-btn"
                 type="button"
                 role="menuitem"
@@ -435,6 +447,8 @@ export function mountLobby({ walletGateway, onCreateRoom, onEnterGame, initialSe
   `;
 
   const connectBtn = /** @type {HTMLButtonElement} */ (root.querySelector('#lobby-connect-btn'));
+  const connectPhantomBtn = /** @type {HTMLButtonElement} */ (root.querySelector('#lobby-connect-phantom-btn'));
+  const connectSolflareBtn = /** @type {HTMLButtonElement} */ (root.querySelector('#lobby-connect-solflare-btn'));
   const disconnectBtn = /** @type {HTMLButtonElement} */ (root.querySelector('#lobby-disconnect-btn'));
   const createRoomBtn = /** @type {HTMLButtonElement} */ (root.querySelector('#lobby-create-room-btn'));
   const enterBtn   = /** @type {HTMLButtonElement} */ (root.querySelector('#lobby-enter-btn'));
@@ -468,7 +482,12 @@ export function mountLobby({ walletGateway, onCreateRoom, onEnterGame, initialSe
    * @param {boolean} open
    */
   function setWalletMenuOpen(open) {
-    const shouldOpen = Boolean(open && lastWalletState?.connected);
+    const canShowPicker = Boolean(
+      !lastWalletState?.connected
+      && Array.isArray(lastWalletState?.wallets)
+      && lastWalletState.wallets.length > 0
+    );
+    const shouldOpen = Boolean(open && (lastWalletState?.connected || canShowPicker));
     walletMenuOpen = shouldOpen;
     if (walletMenuEl) {
       walletMenuEl.hidden = !shouldOpen;
@@ -520,6 +539,73 @@ export function mountLobby({ walletGateway, onCreateRoom, onEnterGame, initialSe
     }
     if (createRoomConfirmBtn) {
       createRoomConfirmBtn.disabled = actionInFlight || !connected;
+    }
+  }
+
+  /**
+   * @param {string} providerName
+   */
+  function findWalletProvider(providerName) {
+    const wallets = Array.isArray(lastWalletState?.wallets) ? lastWalletState.wallets : [];
+    return wallets.find((wallet) => wallet.name === providerName) || null;
+  }
+
+  /**
+   * @param {string} providerName
+   * @param {HTMLButtonElement} button
+   */
+  function syncProviderButton(providerName, button) {
+    if (!button) return;
+    const provider = findWalletProvider(providerName);
+    if (!provider) {
+      button.textContent = `${providerName} (Unavailable)`;
+      button.disabled = true;
+      button.hidden = false;
+      button.classList.remove('is-selected');
+      return;
+    }
+
+    const statusTag = provider.connectable
+      ? (provider.installed ? 'Installed' : 'Loadable')
+      : (provider.readyState || 'Unavailable');
+    button.textContent = provider.connectable ? provider.name : `${provider.name} (${statusTag})`;
+    button.disabled = Boolean(
+      lastWalletState?.connecting
+      || lastWalletState?.disconnecting
+      || !provider.connectable
+    );
+    button.hidden = Boolean(lastWalletState?.connected);
+    button.classList.toggle('is-selected', provider.name === lastWalletState?.selectedWalletName);
+  }
+
+  function syncWalletMenuButtons() {
+    syncProviderButton('Phantom', connectPhantomBtn);
+    syncProviderButton('Solflare', connectSolflareBtn);
+
+    if (disconnectBtn) {
+      disconnectBtn.hidden = !lastWalletState?.connected;
+      disconnectBtn.disabled = Boolean(
+        !lastWalletState?.connected
+        || lastWalletState?.connecting
+      );
+    }
+  }
+
+  /**
+   * @param {string} providerName
+   */
+  async function connectWithProvider(providerName) {
+    const provider = findWalletProvider(providerName);
+    if (!provider?.connectable) {
+      setStatus(`${providerName} is not available in this browser session.`, true);
+      return;
+    }
+    setWalletMenuOpen(false);
+    connectBtn.disabled = true;
+    try {
+      await walletGateway.connect(providerName);
+    } catch (err) {
+      console.error('[Lobby] connect failed:', err);
     }
   }
 
@@ -576,6 +662,7 @@ export function mountLobby({ walletGateway, onCreateRoom, onEnterGame, initialSe
   }
 
   setSkinIndex(selectedSkinIndex);
+  syncWalletMenuButtons();
   if (roomCodeInputEl) {
     roomCodeInputEl.value = typeof initialRoomCode === 'string' ? initialRoomCode.trim() : '';
     roomCodeInputEl.addEventListener('input', () => {
@@ -585,7 +672,19 @@ export function mountLobby({ walletGateway, onCreateRoom, onEnterGame, initialSe
 
   _disposeLobbyClickEffects = setupLobbyClickEffects({
     screenEl: lobbyScreenEl,
-    buttons: [connectBtn, disconnectBtn, createRoomBtn, enterBtn, skinPrevBtn, skinNextBtn, createRoomCloseBtn, createRoomCancelBtn, createRoomConfirmBtn]
+    buttons: [
+      connectBtn,
+      connectPhantomBtn,
+      connectSolflareBtn,
+      disconnectBtn,
+      createRoomBtn,
+      enterBtn,
+      skinPrevBtn,
+      skinNextBtn,
+      createRoomCloseBtn,
+      createRoomCancelBtn,
+      createRoomConfirmBtn
+    ]
   });
 
   skinPrevBtn.addEventListener('click', () => {
@@ -599,10 +698,11 @@ export function mountLobby({ walletGateway, onCreateRoom, onEnterGame, initialSe
   // ── Wallet state ──────────────────────────────────────────────────────────
   _unsubWallet = walletGateway.onChange((state) => {
     lastWalletState = state;
-    if (!state.connected) {
+    syncWalletMenuButtons();
+    if (state.connected && walletMenuOpen) {
       setWalletMenuOpen(false);
     }
-    _renderWalletState(state, { connectBtn, disconnectBtn, enterBtn, statusEl, addressEl });
+    _renderWalletState(state, { connectBtn, enterBtn, statusEl, addressEl });
     syncEnterButtonState();
     if (state.connected) {
       void refreshSolBalance();
@@ -617,16 +717,21 @@ export function mountLobby({ walletGateway, onCreateRoom, onEnterGame, initialSe
   // ── Connect ───────────────────────────────────────────────────────────────
   connectBtn.addEventListener('click', async () => {
     if (connectBtn.disabled) return;
-    if (lastWalletState?.connected) {
-      setWalletMenuOpen(!walletMenuOpen);
-      return;
-    }
-    connectBtn.disabled = true;
-    try {
-      await walletGateway.connect();
-    } catch (err) {
-      console.error('[Lobby] connect failed:', err);
-    }
+    setWalletMenuOpen(!walletMenuOpen);
+  });
+
+  connectPhantomBtn.addEventListener('click', async (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (connectPhantomBtn.disabled) return;
+    await connectWithProvider('Phantom');
+  });
+
+  connectSolflareBtn.addEventListener('click', async (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (connectSolflareBtn.disabled) return;
+    await connectWithProvider('Solflare');
   });
 
   disconnectBtn.addEventListener('click', async (event) => {
@@ -828,14 +933,13 @@ function setupLobbyBackgroundVideo(videoEl) {
 
 // ── Wallet state renderer ────────────────────────────────────────────────────
 
-function _renderWalletState(state, { connectBtn, disconnectBtn, enterBtn, statusEl, addressEl }) {
+function _renderWalletState(state, { connectBtn, enterBtn, statusEl, addressEl }) {
   const noWallets = state.wallets.every((w) => !w.connectable);
   const connectLabel = connectBtn.querySelector('.lobby-btn-label');
   const enterLabel = enterBtn.querySelector('.lobby-btn-label');
 
   if (state.connecting) {
     connectBtn.disabled = true;
-    disconnectBtn.disabled = true;
     if (connectLabel) connectLabel.textContent = state.disconnecting ? 'Disconnecting...' : 'Connecting...';
     if (enterLabel) enterLabel.textContent = 'Connect Wallet';
     enterBtn.disabled = true;
@@ -848,7 +952,6 @@ function _renderWalletState(state, { connectBtn, disconnectBtn, enterBtn, status
 
   if (state.connected) {
     connectBtn.disabled = false;
-    disconnectBtn.disabled = false;
     if (connectLabel) connectLabel.textContent = state.publicKeyShort || 'Connected';
     statusEl.textContent = 'Wallet connected';
     statusEl.classList.remove('lobby-status--error');
@@ -861,7 +964,6 @@ function _renderWalletState(state, { connectBtn, disconnectBtn, enterBtn, status
 
   if (enterLabel) enterLabel.textContent = 'Connect Wallet';
   enterBtn.disabled = true;
-  disconnectBtn.disabled = true;
   addressEl.textContent = '';
   addressEl.hidden  = true;
 

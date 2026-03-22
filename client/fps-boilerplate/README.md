@@ -31,7 +31,7 @@ This is the active client prototype in the workspace, not the final production c
 - Lobby flow is wallet-first in the new layout: `Connect Wallet` is in the top-right menu chip, and the primary CTA label switches between `CONNECT WALLET` (disconnected) and `ENTER GAME` (connected).
 - Lobby footer now includes a `Create Room` CTA that submits on-chain `create_room(stake_lamports)` and returns a room-code handle from chain (one-room-per-creator rule).
 - `Enter Game` and join flow are room-code-driven and require the target room-code + wallet; no global room browser is used.
-- Connected-wallet controls now use a top-right dropdown: clicking the wallet chip while connected opens a menu with `Disconnect`, while disconnected click behavior still starts `connect()`.
+- Connected-wallet controls use a top-right dropdown: clicking `Connect Wallet` while disconnected opens a provider picker (`Phantom`/`Solflare`), and clicking the connected wallet chip opens a menu with `Disconnect`.
 - Wallet disconnect flow is gateway-driven and immediate: on disconnect request, UI state flips out of connected instantly and all connected adapters are asked to disconnect to prevent stale `Wallet connected` labels.
 - Gateway now ignores late wallet `connect` events after a manual disconnect until the next explicit `connect()` call, preventing stale address/SOL-balance rebound after disconnect.
 - Lobby wallet dropdown close handling is click-phase (not pointerdown) and the `Disconnect` menu item now stops propagation before invoking disconnect, so the action is not dropped by menu-close races.
