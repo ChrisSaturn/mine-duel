@@ -44,8 +44,8 @@ This is the active client prototype in the workspace, not the final production c
 - Lobby footer event card shows `BLITZ V2` with `MAGICBLOCK` subtitle, while the primary `Enter Game` CTA remains the main footer action.
 - Lobby character stage/canvas height is increased across desktop/tablet/mobile breakpoints so the bottom character shadow renders fully in preview.
 - In-game HUD styling (`src/style.css`) now follows the Lobby UI visual language (shared palette/tokens, pixel card gradients, chip-style wallet controls, lobby-colored sprint bar, and updated pointer-lock instruction card), while preserving existing HUD IDs/runtime logic.
-- In-game HUD now includes a default bottom-right notification bopper (`#notification-bopper`) with lobby-aligned styling, queued runtime alerts, tone states (`info`, `success`, `warning`, `danger`), and game-route-only display.
-- Mine transaction UX now emits lifecycle boppers: `Sending mine tx…` on dispatch, `Mine tx approved.` on confirmation, danger-tone failure/rejection boppers when send/confirm fails, and timeout rollback warnings that restore the optimistically hidden block if confirmation stalls (`12s` window).
+- In-game HUD now includes a default bottom-right notification bopper stack (`#notification-bopper`) with lobby-aligned styling, up to 5 concurrent runtime pills, tone states (`info`, `success`, `warning`, `danger`), recency-based opacity falloff, and game-route-only display.
+- Mine transaction UX now emits lifecycle boppers through a keyed single-pill flow: each mine action starts as `Sending mine tx…` and updates that same pill to `Mine tx approved.` or `Mine failed.`/`Mine rejected.`, with timeout rollback warnings restoring optimistically hidden blocks if confirmation stalls (`12s` window).
 - Runtime player model uses a slower, extra-aggressive procedural walk-cycle limb animation while moving on ground (arm/leg swing amplitudes doubled to `+/-40` with a forward-biased `-30` arm center, and `+/-60` legs).
 - Runtime camera anchor now keeps local `X` fixed and samples the bind/rebind anchor from head-mesh world bounds (higher eye-height ratio), with fallback to head-node origin when bounds are unavailable, preserving stable first-person eye placement while preventing yaw-induced lateral drift.
 - Runtime camera sampled `Z` anchor is clamped to the capsule envelope (`~45%` of collider radius), preventing camera placement outside the player pill.
@@ -100,10 +100,13 @@ This is the active client prototype in the workspace, not the final production c
 - Canonical room states: `Lobby` -> `WaitingForOpponent` -> `WaitingForVrf` -> `Active` -> `Won` -> `Finalized` -> `PayoutSettled`.
 - Game input/pointer-lock is hard-gated to `Active`; creators entering immediately after `create_room` stay in a wait screen until player two joins.
 - While in `WaitingForOpponent`/`WaitingForVrf`, gameplay route renders a room-status overlay with the full room code; creator sees a `Cancel Room` action wired to on-chain `cancel_room_prejoin`.
+- While in `WaitingForVrf`, lifecycle activation (`delegate_private_state` + `request_winner_vrf`) may now be auto-triggered by either participant (creator or joiner), avoiding a creator-only deadlock when only player two is online.
+- Enter flow now probes existing room membership first and skips `join_room` when the wallet is already a participant, preventing delegated-room re-entry failures (`AccountOwnedByWrongProgram`, `3007`).
 - Base (L1) runtime writes: `create_room` / `cancel_room_prejoin` / `join_room` / `delegate_private_state` / `settle_win_payout`.
 - ER/runtime writes: `request_winner_vrf` / `mine` / `finalize_win`.
 - Settlement support: base-layer `process_undelegation` after `finalize_win` ownership return.
-- Session keys are auto-managed in client: create when entering `Active`, sign repeated `mine` only with session signer, refresh/revoke around room exit and settlement.
+- Session keys are auto-managed in client for ER-authorized actions: `request_winner_vrf`, `mine`, and `finalize_win` use session signer + `session_token` (with refresh/retry on expiry), while payout transfer (`settle_win_payout`) remains winner-wallet signed on base.
+- `mine` now hard-rejects non-`Active` lifecycle states before any session-creation signature prompt.
 - Room discovery is room-code-only and uses creator-owned single-PDA naming; there is no room-browser list in client v1.
 - Match completion is two-step payout: `finalize_win` commits + undelegation, then base-layer `settle_win_payout` drains escrow and confirms final payout.
 
@@ -151,7 +154,7 @@ Available only when running with `VITE_ENABLE_EDITOR=1`.
 - Displays controls summary
 - Includes a real-time FPS counter
 - Uses Lobby-aligned styling for the gameplay HUD shell, wallet controls, crosshair glow treatment, sprint bar, and pointer-lock instruction overlay
-- Includes a bottom-right notification bopper for gameplay runtime events (wallet transitions, routing state, and settlement/failure notices)
+- Includes a bottom-right stacked notification bopper (max 5 pills) for gameplay runtime events (wallet transitions, routing state, and settlement/failure notices)
 - Includes a room wait overlay that shows room code + lifecycle messaging before match activation, with creator-only cancel while pre-join.
 - Includes a match end visual overlay (winner/loser card) with a 3-2-1 countdown before returning to lobby
 - Shows a centered Minecraft-style crosshair during active pointer-lock gameplay

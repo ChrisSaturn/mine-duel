@@ -81,8 +81,9 @@ Expected:
 
 Flow:
 
-1. Call `request_winner_vrf(client_seed)`.
-2. Observe callback into `consume_winner_vrf(randomness)`.
+1. Create/refresh session token (or use direct participant signer).
+2. Call `request_winner_vrf(client_seed)` on ER.
+3. Observe callback into `consume_winner_vrf(randomness)`.
 
 Expected:
 
@@ -123,13 +124,14 @@ Flow:
 
 1. Mine winner coordinate first.
 2. Verify room status = `Won` and winner pubkey set.
-3. Call `finalize_win()` on ER router (commit + undelegate scheduling).
+3. Call `finalize_win()` on ER router using winner direct signer or winner-authorized session token.
 4. Wait for delegated account ownership to return from delegation program.
 5. Winner calls `settle_win_payout()` on base RPC.
 
 Expected:
 
 - `finalize_win` succeeds on ER and schedules commit/undelegate.
+- `finalize_win` performs no escrow transfer; escrow transfer remains base `settle_win_payout` only.
 - Room/vault/winner/reveal owners return from `DELeGG...` to the game program.
 - `settle_win_payout` transfers full escrow to winner and sets room status to `Finalized`.
 
@@ -245,3 +247,17 @@ Post-reclaim state:
   - ProgramData `2NmAFHdxrLPuEhegdnpBRpFLTZQtGhGLeNQYMAvZbMMf`
   - Authority `7QA5Gqmq2CWdu585eQFqN2BobwzBWuYhuPMHih1t12bJ`
   - Balance `3.5209596 SOL`
+
+## Program Upgrade Deployment (Executed 2026-03-22)
+
+Context:
+- Deployer wallet funded: `7QA5Gqmq2CWdu585eQFqN2BobwzBWuYhuPMHih1t12bJ`.
+- `anchor deploy` crashed locally with OS runtime panic (`Attempted to create a NULL object`), so deployment was executed with direct Solana CLI.
+
+Deployment:
+- Command path: `solana program deploy target/deploy/mine_duel.so --program-id target/deploy/mine_duel-keypair.json -u devnet -k wallets/deployer.json`
+- Program Id: `4b2q3K4cgr1P8FkjbcQ8nssDxLb9dhdVgVtrknvn5igJ`
+- Deploy signature: `5qv2kfPsbsP1vu8wPrSGjq73scqR5Xk4P4ZWvcAf3UMv3DmdJbLLrntjXnhSW2HHsF3eLuiL6VBN3SqN3uVZV3yp`
+- Verification: `solana program show ... -u devnet`
+  - Last Deployed In Slot: `450312951`
+  - Authority: `7QA5Gqmq2CWdu585eQFqN2BobwzBWuYhuPMHih1t12bJ`

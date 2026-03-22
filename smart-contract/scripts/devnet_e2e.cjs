@@ -1116,8 +1116,7 @@ async function main() {
   const finalizeWinTransaction = await player2ErProgram.methods
     .finalizeWin()
     .accounts({
-      payer: creatorPk,
-      winner: player2Pk,
+      payer: player2Pk,
       room,
       vault,
       winnerState,
@@ -1127,11 +1126,8 @@ async function main() {
       magicContext: MAGIC_CONTEXT,
     })
     .transaction();
-  finalizeWinTransaction.feePayer = creatorPk;
-  const finalizeSignature = await sendErTransaction(erConnection, finalizeWinTransaction, [
-    creator,
-    player2,
-  ]);
+  finalizeWinTransaction.feePayer = player2Pk;
+  const finalizeSignature = await sendErTransaction(erConnection, finalizeWinTransaction, [player2]);
   results.signatures.finalizeWin = finalizeSignature;
   console.log('finalize_win tx:', finalizeSignature);
 
@@ -1141,8 +1137,7 @@ async function main() {
       const transaction = await player2ErProgram.methods
         .finalizeWin()
         .accounts({
-          payer: creatorPk,
-          winner: player2Pk,
+          payer: player2Pk,
           room,
           vault,
           winnerState,
@@ -1152,8 +1147,8 @@ async function main() {
           magicContext: MAGIC_CONTEXT,
         })
         .transaction();
-      transaction.feePayer = creatorPk;
-      return sendErTransaction(erConnection, transaction, [creator, player2]);
+      transaction.feePayer = player2Pk;
+      return sendErTransaction(erConnection, transaction, [player2]);
     },
     results.negativeTests
   );

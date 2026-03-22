@@ -299,11 +299,20 @@ canvas {
   right: 0.9rem;
   bottom: 0.9rem;
   z-index: 45;
+  width: min(90vw, 396px);
+  min-width: min(90vw, 250px);
+  display: flex;
+  flex-direction: column-reverse;
+  align-items: flex-end;
+  gap: 0.34rem;
+  pointer-events: none;
+}
+
+.notification-bopper-pill {
+  width: 100%;
   display: flex;
   align-items: center;
   gap: 0.46rem;
-  min-width: min(90vw, 250px);
-  max-width: min(90vw, 396px);
   padding: 0.48rem 0.6rem;
   border: 2px solid #080d28;
   border-radius: 0.32rem;
@@ -316,7 +325,6 @@ canvas {
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
   image-rendering: pixelated;
-  pointer-events: none;
   opacity: 0;
   transform: translate3d(18px, 0, 0) scale(0.97);
   transition:
@@ -324,17 +332,17 @@ canvas {
     transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
-#notification-bopper.is-visible {
-  opacity: 1;
+.notification-bopper-pill.is-visible {
+  opacity: var(--stack-opacity, 1);
   transform: translate3d(0, 0, 0) scale(1);
 }
 
-#notification-bopper.is-leaving {
+.notification-bopper-pill.is-leaving {
   opacity: 0;
   transform: translate3d(14px, 0, 0) scale(0.98);
 }
 
-.notification-bopper-dot {
+.notification-bopper-pill-dot {
   width: 0.56rem;
   height: 0.56rem;
   flex: 0 0 auto;
@@ -345,11 +353,12 @@ canvas {
   animation: notification-bopper-dot-pulse 900ms steps(2, end) infinite;
 }
 
-.notification-bopper-copy {
+.notification-bopper-pill-copy {
   min-width: 0;
+  flex: 1 1 auto;
 }
 
-#notification-bopper-label {
+.notification-bopper-pill-label {
   margin: 0;
   color: #f6f9ff;
   font-size: clamp(0.56rem, 0.82vw, 0.67rem);
@@ -358,7 +367,7 @@ canvas {
   text-transform: uppercase;
 }
 
-#notification-bopper-meta {
+.notification-bopper-pill-meta {
   margin: 0.15rem 0 0;
   color: rgba(214, 232, 255, 0.94);
   font-size: clamp(0.52rem, 0.74vw, 0.6rem);
@@ -369,23 +378,23 @@ canvas {
   text-transform: uppercase;
 }
 
-#notification-bopper-meta:empty {
+.notification-bopper-pill-meta:empty {
   display: none;
 }
 
-#notification-bopper[data-tone='info'] .notification-bopper-dot {
+.notification-bopper-pill[data-tone='info'] .notification-bopper-pill-dot {
   background: #8dc6ff;
 }
 
-#notification-bopper[data-tone='success'] .notification-bopper-dot {
+.notification-bopper-pill[data-tone='success'] .notification-bopper-pill-dot {
   background: #83f3a0;
 }
 
-#notification-bopper[data-tone='warning'] .notification-bopper-dot {
+.notification-bopper-pill[data-tone='warning'] .notification-bopper-pill-dot {
   background: #f8c826;
 }
 
-#notification-bopper[data-tone='danger'] .notification-bopper-dot {
+.notification-bopper-pill[data-tone='danger'] .notification-bopper-pill-dot {
   background: #ff6a72;
 }
 

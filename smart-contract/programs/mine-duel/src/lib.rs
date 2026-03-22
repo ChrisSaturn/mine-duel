@@ -371,13 +371,19 @@ pub mod mine_duel {
     pub fn request_winner_vrf(ctx: Context<RequestWinnerVrf>, client_seed: u8) -> Result<()> {
         {
             let room = &ctx.accounts.room;
+            let authority =
+                resolve_action_authority(&ctx.accounts.session_token, &ctx.accounts.payer.key())?;
+            check_session_token(
+                ctx.accounts.session_token.as_ref(),
+                &ctx.accounts.payer.key(),
+                &authority,
+            )?;
             require!(
                 room.status == RoomStatus::WaitingForVrf,
                 MineDuelError::InvalidStatus
             );
             require!(
-                room.player_one == ctx.accounts.payer.key()
-                    || room.player_two == ctx.accounts.payer.key(),
+                room.player_one == authority || room.player_two == authority,
                 MineDuelError::Unauthorized
             );
         }
@@ -523,11 +529,18 @@ pub mod mine_duel {
 
     pub fn finalize_win(ctx: Context<FinalizeWin>) -> Result<()> {
         let room = &mut ctx.accounts.room;
+        let authority =
+            resolve_action_authority(&ctx.accounts.session_token, &ctx.accounts.payer.key())?;
+        check_session_token(
+            ctx.accounts.session_token.as_ref(),
+            &ctx.accounts.payer.key(),
+            &authority,
+        )?;
 
         require!(room.status == RoomStatus::Won, MineDuelError::InvalidStatus);
         require_keys_eq!(
             room.winner,
-            ctx.accounts.winner.key(),
+            authority,
             MineDuelError::Unauthorized
         );
         require!(room.total_escrow_lamports > 0, MineDuelError::InvalidStatus);
@@ -817,6 +830,7 @@ pub struct RequestWinnerVrf<'info> {
     #[account(address = anchor_lang::solana_program::sysvar::slot_hashes::ID)]
     pub slot_hashes: AccountInfo<'info>,
     pub system_program: Program<'info, System>,
+    pub session_token: Option<Account<'info, SessionToken>>,
 }
 
 impl<'info> RequestWinnerVrf<'info> {
@@ -911,7 +925,6 @@ pub struct CommitCheckpoint<'info> {
 pub struct FinalizeWin<'info> {
     #[account(mut)]
     pub payer: Signer<'info>,
-    pub winner: Signer<'info>,
     #[account(
         mut,
         seeds = [SEED_ROOM, room.creator.as_ref()],
@@ -933,6 +946,7 @@ pub struct FinalizeWin<'info> {
     /// CHECK: Validated against derived reveal PDA in handler.
     #[account(mut)]
     pub player_two_reveal: AccountInfo<'info>,
+    pub session_token: Option<Account<'info, SessionToken>>,
 }
 
 #[derive(Accounts)]

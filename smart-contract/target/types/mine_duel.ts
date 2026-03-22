@@ -550,10 +550,6 @@ export type MineDuel = {
           "signer": true
         },
         {
-          "name": "winner",
-          "signer": true
-        },
-        {
           "name": "room",
           "writable": true,
           "pda": {
@@ -608,6 +604,10 @@ export type MineDuel = {
         {
           "name": "playerTwoReveal",
           "writable": true
+        },
+        {
+          "name": "sessionToken",
+          "optional": true
         },
         {
           "name": "magicProgram",
@@ -991,6 +991,10 @@ export type MineDuel = {
         {
           "name": "systemProgram",
           "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "sessionToken",
+          "optional": true
         }
       ],
       "args": [

@@ -723,34 +723,68 @@ export function createRoomRuntime({
   }
 
   async function requestWinnerVrf(roomCode, clientSeed = null) {
-    const payer = ensureWalletPublicKey(walletGateway);
+    const authority = ensureWalletPublicKey(walletGateway);
     const creator = parseRoomCode(roomCode);
     const context = buildContextFromCreator(creator, creator, null);
     const seed = Number.isFinite(clientSeed)
       ? Math.max(0, Math.min(255, Math.floor(clientSeed)))
       : Math.floor(Math.random() * 255);
     const programIdentity = PublicKey.findProgramAddressSync([IDENTITY_SEED], resolvedProgramId)[0];
-    const keys = [
-      { pubkey: payer, isSigner: true, isWritable: true },
-      { pubkey: context.room, isSigner: false, isWritable: false },
-      { pubkey: ADDRESSES.vrfOracleQueue, isSigner: false, isWritable: true },
-      { pubkey: programIdentity, isSigner: false, isWritable: false },
-      { pubkey: ADDRESSES.vrfProgram, isSigner: false, isWritable: false },
-      { pubkey: SYSVAR_SLOT_HASHES_PUBKEY, isSigner: false, isWritable: false },
-      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false }
-    ];
-    const tx = new Transaction().add(
-      createInstruction('request_winner_vrf', keys, Uint8Array.of(seed))
-    );
-    const sent = await sendWalletSignedTransaction({
-      connection: erConnection,
-      walletGateway,
-      transaction: tx,
-      feePayer: payer,
-      commitment
-    });
-    await requireConfirmed(sent.confirmation, 'request_winner_vrf failed');
-    return { signature: sent.signature, clientSeed: seed, context };
+
+    async function sendRequestWithSession(forceRefresh = false) {
+      const session = await sessionRuntime.ensureSession({ forceRefresh });
+      const keys = [
+        { pubkey: session.sessionSigner.publicKey, isSigner: true, isWritable: true },
+        { pubkey: context.room, isSigner: false, isWritable: false },
+        { pubkey: ADDRESSES.vrfOracleQueue, isSigner: false, isWritable: true },
+        { pubkey: programIdentity, isSigner: false, isWritable: false },
+        { pubkey: ADDRESSES.vrfProgram, isSigner: false, isWritable: false },
+        { pubkey: SYSVAR_SLOT_HASHES_PUBKEY, isSigner: false, isWritable: false },
+        { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+        { pubkey: session.sessionToken, isSigner: false, isWritable: false }
+      ];
+      const tx = new Transaction().add(
+        createInstruction('request_winner_vrf', keys, Uint8Array.of(seed))
+      );
+      const sent = await sendSignerTransaction({
+        connection: erConnection,
+        transaction: tx,
+        signers: [session.sessionSigner],
+        feePayer: session.sessionSigner.publicKey,
+        commitment
+      });
+      return {
+        ...sent,
+        session
+      };
+    }
+
+    try {
+      const sent = await sendRequestWithSession(false);
+      await requireConfirmed(sent.confirmation, 'request_winner_vrf failed');
+      return {
+        signature: sent.signature,
+        clientSeed: seed,
+        context,
+        usedSessionToken: sent.session.sessionToken.toBase58(),
+        authority: authority.toBase58()
+      };
+    } catch (error) {
+      if (!isInvalidSessionTokenError(error)) {
+        throw error;
+      }
+      sessionRuntime.clearSession();
+      const retry = await sendRequestWithSession(true);
+      await requireConfirmed(retry.confirmation, 'request_winner_vrf failed');
+      return {
+        signature: retry.signature,
+        clientSeed: seed,
+        context,
+        usedSessionToken: retry.session.sessionToken.toBase58(),
+        authority: authority.toBase58(),
+        refreshedSession: true
+      };
+    }
   }
 
   async function consumeWinnerVrf(roomCode, randomnessBytes) {
@@ -767,6 +801,12 @@ export function createRoomRuntime({
       throw new Error('Room not found on chain.');
     }
     const roomShared = roomState.roomShared;
+    if (roomShared.status !== 'Active') {
+      throw new Error(`Cannot mine before room is Active (current status: ${roomShared.status}).`);
+    }
+    if (!roomShared.playerOne.equals(walletPubkey) && !roomShared.playerTwo.equals(walletPubkey)) {
+      throw new Error('Only room participants can mine.');
+    }
     const context = buildContextFromCreator(creator, roomShared.playerOne, roomShared.playerTwo);
 
     async function sendMineWithSession(forceRefresh = false) {
@@ -842,27 +882,56 @@ export function createRoomRuntime({
       current.roomShared.playerOne,
       current.roomShared.playerTwo
     );
-    const keys = [
-      { pubkey: winnerWallet, isSigner: true, isWritable: true },
-      { pubkey: winnerWallet, isSigner: true, isWritable: false },
-      { pubkey: context.room, isSigner: false, isWritable: true },
-      { pubkey: context.vault, isSigner: false, isWritable: true },
-      { pubkey: context.winnerState, isSigner: false, isWritable: true },
-      { pubkey: context.playerOneReveal, isSigner: false, isWritable: true },
-      { pubkey: context.playerTwoReveal, isSigner: false, isWritable: true },
-      { pubkey: ADDRESSES.magicProgram, isSigner: false, isWritable: false },
-      { pubkey: ADDRESSES.magicContext, isSigner: false, isWritable: true }
-    ];
-    const tx = new Transaction().add(createInstruction('finalize_win', keys));
-    const sent = await sendWalletSignedTransaction({
-      connection: erConnection,
-      walletGateway,
-      transaction: tx,
-      feePayer: winnerWallet,
-      commitment
-    });
-    await requireConfirmed(sent.confirmation, 'finalize_win failed');
-    return { signature: sent.signature, context };
+
+    async function sendFinalizeWithSession(forceRefresh = false) {
+      const session = await sessionRuntime.ensureSession({ forceRefresh });
+      const keys = [
+        { pubkey: session.sessionSigner.publicKey, isSigner: true, isWritable: true },
+        { pubkey: context.room, isSigner: false, isWritable: true },
+        { pubkey: context.vault, isSigner: false, isWritable: true },
+        { pubkey: context.winnerState, isSigner: false, isWritable: true },
+        { pubkey: context.playerOneReveal, isSigner: false, isWritable: true },
+        { pubkey: context.playerTwoReveal, isSigner: false, isWritable: true },
+        { pubkey: session.sessionToken, isSigner: false, isWritable: false },
+        { pubkey: ADDRESSES.magicProgram, isSigner: false, isWritable: false },
+        { pubkey: ADDRESSES.magicContext, isSigner: false, isWritable: true }
+      ];
+      const tx = new Transaction().add(createInstruction('finalize_win', keys));
+      const sent = await sendSignerTransaction({
+        connection: erConnection,
+        transaction: tx,
+        signers: [session.sessionSigner],
+        feePayer: session.sessionSigner.publicKey,
+        commitment
+      });
+      return {
+        ...sent,
+        session
+      };
+    }
+
+    try {
+      const sent = await sendFinalizeWithSession(false);
+      await requireConfirmed(sent.confirmation, 'finalize_win failed');
+      return {
+        signature: sent.signature,
+        context,
+        usedSessionToken: sent.session.sessionToken.toBase58()
+      };
+    } catch (error) {
+      if (!isInvalidSessionTokenError(error)) {
+        throw error;
+      }
+      sessionRuntime.clearSession();
+      const retry = await sendFinalizeWithSession(true);
+      await requireConfirmed(retry.confirmation, 'finalize_win failed');
+      return {
+        signature: retry.signature,
+        context,
+        usedSessionToken: retry.session.sessionToken.toBase58(),
+        refreshedSession: true
+      };
+    }
   }
 
   async function processUndelegation(roomCode) {

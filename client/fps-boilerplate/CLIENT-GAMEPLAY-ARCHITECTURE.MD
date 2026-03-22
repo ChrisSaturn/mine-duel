@@ -19,6 +19,8 @@ This document defines the browser-client control plane for v1 gameplay only.
 - `Lobby` is local pre-chain UI state before any instruction is sent.
 - `WaitingForOpponent` is entered after `create_room(stake_lamports)` (creator signed).
 - `WaitingForVrf` is entered after `join_room` and pre-commit to random winner.
+- While in `WaitingForVrf`, either participant may trigger lifecycle activation (`delegate_private_state` + `request_winner_vrf`) to avoid creator-only deadlock.
+- ER-side `request_winner_vrf` and `finalize_win` are session-authorized in client/runtime to avoid extension-wallet cluster mismatch prompts on ER-specific blockhash domains.
 - `Active` is entered after winner VRF consume callback is acknowledged on-chain.
 - `Won` is entered when the miner account reports `winner_cell` hit.
 - `Finalized` is entered once `finalize_win` + delegated-state undelegation are committed.
@@ -54,11 +56,12 @@ Routing summary:
 
 ## Session-key lifecycle
 
-- Session keys are created automatically when a signed player enters `Active`.
-- Session-signed instructions are used for `mine(...)` to avoid wallet popup per shot.
+- Session keys are created automatically for ER-authorized actions (`request_winner_vrf`, `mine`, `finalize_win`) and refreshed on expiry.
+- Session-signed instructions are used for ER gameplay/lifecycle actions to avoid repetitive wallet prompts and wallet-extension network-mismatch failures on ER routes.
+- `mine(...)` is pre-gated to `Active` status before any session-key creation/signature prompt.
 - Re-sign only on token-refresh edges: short expiry or on authority/session errors.
 - Session context is revoked on room cancellation, room exit, or final payout path completion.
-- Failed/expired session tokens fall back to wallet signer only where supported by protocol rules.
+- Failed/expired session tokens trigger session recreation and retry before surfacing an error.
 
 ## On-chain data -> client subscriptions
 
@@ -71,6 +74,8 @@ Routing summary:
   - After undelegation (base owner returns to the Mine Duel program), base snapshots become authoritative for lifecycle and payout settlement.
   - ER/base slot numbers are not compared against each other for authority; ownership determines the active source.
 - Mine patch visibility/fog is rebuilt directly from `mined_mask` + local `revealed_mask` account data.
+- Client render baseline: mine patch `y=0` (top visual layer) is forced visible on load for UX parity; deeper layers still follow `revealed_mask` + mined-state gating.
+- Winner-cell visual policy: when `winner_cell` is visible to the local player (revealed + not mined), the default mined-patch variant mesh is suppressed and replaced with `Block_Blank` (`blank_block`) rendering.
 - No world-profile stream dependency and no managed PER room snapshot ingestion in v1.
 
 ## Runtime modules
@@ -99,12 +104,13 @@ Routing summary:
 - Unauthorized mine/callback/settlement reject.
 - Wrong routing (base-vs-ER mismatch) reject due to account ownership guard.
 - Stale/expired session token requires user-visible re-auth path.
-- Mine instruction UX shows full tx lifecycle boppers: `Sending mine tx…` on dispatch, `Mine tx approved.` on confirmation, and existing `Mine failed.`/`Mine rejected.` on error edges.
+- Mine instruction UX uses stacked tx lifecycle boppers (max `5`, with recency opacity falloff): each mine action keeps one keyed pill that starts at `Sending mine tx…` and updates in place to `Mine tx approved.` or `Mine failed.`/`Mine rejected.`.
 - Optimistic mined-cell hides are rollback-safe: if mine confirmation does not land within client timeout (`12s`), the cell is restored in view and can be re-mined.
 
 ## Failure and recovery policy
 
 - `create_room` or `join_room` failures remain local retryable with same room code.
+- Re-enter flow fetches room state before join; if wallet is already `player_one`/`player_two`, client skips `join_room` to avoid delegated-owner join simulation failures (`3007`).
 - Room cancel in `WaitingForOpponent` is terminal for that room and clears local active-room context before returning to lobby.
 - On `won`/`finalize_win` path, client holds in UI `Finalized` until base confirms `PayoutSettled`.
 - On reload, room state is reconstructed from subscriptions only and any in-flight mining state is re-rendered from chain state.

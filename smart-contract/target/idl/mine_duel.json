@@ -544,10 +544,6 @@
           "signer": true
         },
         {
-          "name": "winner",
-          "signer": true
-        },
-        {
           "name": "room",
           "writable": true,
           "pda": {
@@ -602,6 +598,10 @@
         {
           "name": "player_two_reveal",
           "writable": true
+        },
+        {
+          "name": "session_token",
+          "optional": true
         },
         {
           "name": "magic_program",
@@ -985,6 +985,10 @@
         {
           "name": "system_program",
           "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "session_token",
+          "optional": true
         }
       ],
       "args": [

@@ -47,8 +47,6 @@ const walletAddressValue = document.getElementById('wallet-address-value');
 const walletRpcValue = document.getElementById('wallet-rpc-value');
 const streamStatusValue = document.getElementById('stream-status-value');
 const notificationBopper = document.getElementById('notification-bopper');
-const notificationBopperLabel = document.getElementById('notification-bopper-label');
-const notificationBopperMeta = document.getElementById('notification-bopper-meta');
 const matchResultOverlay = document.getElementById('match-result-overlay');
 const matchResultKicker = document.getElementById('match-result-kicker');
 const matchResultTitle = document.getElementById('match-result-title');
@@ -112,6 +110,7 @@ const CONFIG = {
 };
 const DEFAULT_PLAYER_MODEL_PATH = withBaseUrl('models/characters/kenney-blocky/character-a.glb');
 const FIRST_PERSON_PICKAXE_MODEL_PATH = withBaseUrl('models/kenney-survival/GLB format/tool-pickaxe.glb');
+const WINNER_BLANK_BLOCK_MODEL_PATH = withBaseUrl('models/cube-world/Blocks/glTF/Block_Blank.gltf');
 const MINE_BREAK_MAX_DISTANCE = 7.5;
 const MINE_BREAK_COOLDOWN_MS = 120;
 const MINE_BREAKABLE_NAME_PREFIX = 'cube-world-ground-';
@@ -141,6 +140,10 @@ const MINE_SWAY_Y_FREQ_MOVEMENT = 6;
 const MINE_SWING_JITTER_FREQ = 92;
 const MINE_SWING_JITTER_AMOUNT = 0.0024;
 const MINE_CONFIRMATION_TIMEOUT_MS = 12000;
+const MINE_VISUAL_EXPOSED_LAYER_Y = 0;
+const MINE_PENDING_NOTIFICATION_TTL_MS = MINE_CONFIRMATION_TIMEOUT_MS + 1200;
+const NOTIFICATION_STACK_LIMIT = 5;
+const NOTIFICATION_LEAVE_MS = 220;
 const ROOM_CONTEXT_STORAGE_KEY = 'mine-duel.active-room-context.v1';
 let selectedPlayerModelPath = DEFAULT_PLAYER_MODEL_PATH;
 
@@ -210,6 +213,11 @@ const mineBreakParticleGeometry = new THREE.BoxGeometry(1, 1, 1);
 const mineBreakHiddenInstancePosition = new THREE.Vector3();
 const mineBreakHiddenInstanceQuaternion = new THREE.Quaternion();
 const mineBreakHiddenInstanceScale = new THREE.Vector3();
+const winnerBlankBlockWorldMatrix = new THREE.Matrix4();
+const winnerBlankBlockParentInverseMatrix = new THREE.Matrix4();
+const winnerBlankBlockWorldPosition = new THREE.Vector3();
+const winnerBlankBlockWorldQuaternion = new THREE.Quaternion();
+const winnerBlankBlockWorldScale = new THREE.Vector3();
 const playerModelBounds = new THREE.Box3();
 const playerModelSize = new THREE.Vector3();
 const playerModelCenter = new THREE.Vector3();
@@ -305,14 +313,14 @@ const mineCellVisualEntries = [];
 const mineCellVisualByIndex = new Map();
 const optimisticMinedCellIndexes = new Set();
 const optimisticMinePendingByBitIndex = new Map();
+let winnerBlankBlockVisual = null;
+let winnerBlankBlockLoadPromise = null;
 const mineBreakParticles = [];
 let lastMineAtMs = 0;
 let atmosphereRuntime = null;
 let postProcessRuntime = null;
-const notificationQueue = [];
-let notificationHideTimerId = 0;
-let notificationLeaveTimerId = 0;
-let notificationBopperShowing = false;
+const notificationStack = [];
+let notificationAutoId = 0;
 let matchResultCountdownTimer = 0;
 let matchResultCountdown = 0;
 let matchResultRedirectTimer = 0;
@@ -708,6 +716,11 @@ function sanitizeBopperMeta(value) {
   return `${text.slice(0, 61)}...`;
 }
 
+function createNotificationBopperKey(prefix = 'notification') {
+  notificationAutoId += 1;
+  return `${prefix}-${Date.now().toString(36)}-${notificationAutoId.toString(36)}`;
+}
+
 function loadStoredRoomContext() {
   try {
     const raw = sessionStorage.getItem(ROOM_CONTEXT_STORAGE_KEY);
@@ -759,6 +772,121 @@ function clearStoredRoomContext() {
 
 function getActiveGameplayGrid() {
   return activeMapData?.gameplayGrid || null;
+}
+
+function resolveMinePatchDims() {
+  for (const target of mineHoverTargets) {
+    const dims = target?.userData?.minePatchDims;
+    if (!Array.isArray(dims) || dims.length < 3) {
+      continue;
+    }
+
+    return [
+      Math.max(1, Math.floor(Math.abs(Number(dims[0]) || 16))),
+      Math.max(1, Math.floor(Math.abs(Number(dims[1]) || 8))),
+      Math.max(1, Math.floor(Math.abs(Number(dims[2]) || 16)))
+    ];
+  }
+  return [16, 8, 16];
+}
+
+function getMineCellYFromBitIndex(cellIndex, dims = resolveMinePatchDims()) {
+  if (!Number.isInteger(cellIndex) || cellIndex < 0 || !Array.isArray(dims) || dims.length < 3) {
+    return -1;
+  }
+  const width = Math.max(1, Math.floor(Math.abs(Number(dims[0]) || 16)));
+  const depth = Math.max(1, Math.floor(Math.abs(Number(dims[2]) || 16)));
+  const layerSize = width * depth;
+  if (!Number.isFinite(layerSize) || layerSize <= 0) {
+    return -1;
+  }
+  return Math.floor(cellIndex / layerSize);
+}
+
+function isMineCellVisuallyExposedByDefault(cellIndex, dims = resolveMinePatchDims()) {
+  return getMineCellYFromBitIndex(cellIndex, dims) === MINE_VISUAL_EXPOSED_LAYER_Y;
+}
+
+function resolveWinnerCellBitIndex() {
+  if (!roomRuntime || latestWinnerState?.vrfFulfilled !== true || !Array.isArray(latestWinnerState?.winnerCell)) {
+    return -1;
+  }
+  return roomRuntime.getCellIndex(latestWinnerState.winnerCell, resolveMinePatchDims());
+}
+
+function hideWinnerBlankBlockVisual() {
+  if (winnerBlankBlockVisual) {
+    winnerBlankBlockVisual.visible = false;
+  }
+}
+
+function attachWinnerBlankBlockVisual() {
+  if (!winnerBlankBlockVisual || !activeRuntimeState?.worldRoot) {
+    return;
+  }
+  if (winnerBlankBlockVisual.parent === activeRuntimeState.worldRoot) {
+    return;
+  }
+  winnerBlankBlockVisual.parent?.remove(winnerBlankBlockVisual);
+  activeRuntimeState.worldRoot.add(winnerBlankBlockVisual);
+}
+
+function updateWinnerBlankBlockVisualFromEntry(entry) {
+  if (!winnerBlankBlockVisual || !entry?.mesh || !entry?.originalMatrix) {
+    hideWinnerBlankBlockVisual();
+    return;
+  }
+
+  attachWinnerBlankBlockVisual();
+  winnerBlankBlockWorldMatrix.multiplyMatrices(entry.mesh.matrixWorld, entry.originalMatrix);
+  if (winnerBlankBlockVisual.parent) {
+    winnerBlankBlockParentInverseMatrix.copy(winnerBlankBlockVisual.parent.matrixWorld).invert();
+    winnerBlankBlockWorldMatrix.premultiply(winnerBlankBlockParentInverseMatrix);
+  }
+  winnerBlankBlockWorldMatrix.decompose(
+    winnerBlankBlockWorldPosition,
+    winnerBlankBlockWorldQuaternion,
+    winnerBlankBlockWorldScale
+  );
+
+  winnerBlankBlockVisual.position.copy(winnerBlankBlockWorldPosition);
+  winnerBlankBlockVisual.quaternion.copy(winnerBlankBlockWorldQuaternion);
+  winnerBlankBlockVisual.scale.copy(winnerBlankBlockWorldScale);
+  winnerBlankBlockVisual.visible = true;
+}
+
+async function ensureWinnerBlankBlockVisual() {
+  if (winnerBlankBlockVisual) {
+    attachWinnerBlankBlockVisual();
+    return winnerBlankBlockVisual;
+  }
+  if (!winnerBlankBlockLoadPromise) {
+    winnerBlankBlockLoadPromise = new Promise((resolve, reject) => {
+      playerModelLoader.load(WINNER_BLANK_BLOCK_MODEL_PATH, resolve, undefined, reject);
+    })
+      .then((gltf) => {
+        const visual = gltf.scene;
+        visual.name = 'mine-winner-blank-block';
+        visual.visible = false;
+        visual.userData.mineVisualRemoved = true;
+        visual.traverse((node) => {
+          if (!node?.isMesh) {
+            return;
+          }
+          node.castShadow = true;
+          node.receiveShadow = true;
+          node.frustumCulled = false;
+        });
+        winnerBlankBlockVisual = visual;
+        attachWinnerBlankBlockVisual();
+        return winnerBlankBlockVisual;
+      })
+      .catch((error) => {
+        console.warn('Failed to load winner blank block model:', WINNER_BLANK_BLOCK_MODEL_PATH, error);
+        return null;
+      });
+  }
+  return winnerBlankBlockLoadPromise;
 }
 
 function setMineVisualEntryVisible(entry, visible) {
@@ -827,19 +955,33 @@ function rebuildMineCellVisualIndex() {
 
 function applyMineMaskToVisuals() {
   if (!roomRuntime || mineCellVisualEntries.length === 0) {
+    hideWinnerBlankBlockVisual();
     return;
   }
   const changedMeshes = new Set();
   const minedMask = latestWinnerState?.minedMask || null;
   const revealedMask = latestPlayerRevealState?.revealedMask || null;
+  const minePatchDims = resolveMinePatchDims();
+  const winnerCellBitIndex = resolveWinnerCellBitIndex();
+  const canRenderWinnerBlank = Boolean(winnerBlankBlockVisual);
+  let winnerVisualEntry = null;
 
   for (const entry of mineCellVisualEntries) {
     const idx = entry.cellIndex;
     const mined = minedMask ? roomRuntime.maskBitSet(minedMask, idx) : false;
-    const revealed = revealedMask ? roomRuntime.maskBitSet(revealedMask, idx) : true;
+    const revealedByMask = revealedMask ? roomRuntime.maskBitSet(revealedMask, idx) : true;
+    const revealed = revealedByMask || isMineCellVisuallyExposedByDefault(idx, minePatchDims);
     const optimisticMined = optimisticMinedCellIndexes.has(idx);
     const shouldBeVisible = revealed && !mined && !optimisticMined;
-    if (setMineVisualEntryVisible(entry, shouldBeVisible)) {
+    const renderAsWinnerBlank = canRenderWinnerBlank
+      && winnerCellBitIndex >= 0
+      && idx === winnerCellBitIndex
+      && shouldBeVisible;
+    if (renderAsWinnerBlank && !winnerVisualEntry) {
+      winnerVisualEntry = entry;
+    }
+    const shouldRenderDefaultMesh = shouldBeVisible && !renderAsWinnerBlank;
+    if (setMineVisualEntryVisible(entry, shouldRenderDefaultMesh)) {
       changedMeshes.add(entry.mesh);
     }
   }
@@ -848,6 +990,12 @@ function applyMineMaskToVisuals() {
     mesh.instanceMatrix.needsUpdate = true;
     mesh.computeBoundingBox?.();
     mesh.computeBoundingSphere?.();
+  }
+
+  if (winnerVisualEntry && winnerBlankBlockVisual) {
+    updateWinnerBlankBlockVisualFromEntry(winnerVisualEntry);
+  } else {
+    hideWinnerBlankBlockVisual();
   }
 }
 
@@ -919,99 +1067,109 @@ function rollbackExpiredOptimisticMines(nowMs = performance.now()) {
   );
 }
 
-function clearNotificationTimers() {
-  if (notificationHideTimerId) {
-    window.clearTimeout(notificationHideTimerId);
-    notificationHideTimerId = 0;
+function clearNotificationEntryTimers(entry) {
+  if (!entry) {
+    return;
   }
-  if (notificationLeaveTimerId) {
-    window.clearTimeout(notificationLeaveTimerId);
-    notificationLeaveTimerId = 0;
+  if (entry.hideTimerId) {
+    window.clearTimeout(entry.hideTimerId);
+    entry.hideTimerId = 0;
+  }
+  if (entry.leaveTimerId) {
+    window.clearTimeout(entry.leaveTimerId);
+    entry.leaveTimerId = 0;
+  }
+}
+
+function clearNotificationTimers() {
+  for (const entry of notificationStack) {
+    clearNotificationEntryTimers(entry);
   }
 }
 
 function resetNotificationBopper() {
-  notificationQueue.length = 0;
-  notificationBopperShowing = false;
   clearNotificationTimers();
+  notificationStack.length = 0;
   if (!notificationBopper) {
     return;
   }
+  notificationBopper.replaceChildren();
   notificationBopper.hidden = true;
-  notificationBopper.classList.remove('is-visible', 'is-leaving');
-  notificationBopper.dataset.tone = 'info';
 }
 
-function dismissNotificationBopper() {
-  if (!notificationBopper || !notificationBopperShowing) {
+function removeNotificationEntryByIndex(index) {
+  if (index < 0 || index >= notificationStack.length) {
+    return;
+  }
+  const [removed] = notificationStack.splice(index, 1);
+  clearNotificationEntryTimers(removed);
+}
+
+function renderNotificationBopperStack() {
+  if (!notificationBopper) {
     return;
   }
 
-  notificationBopperShowing = false;
-  if (notificationHideTimerId) {
-    window.clearTimeout(notificationHideTimerId);
-    notificationHideTimerId = 0;
-  }
-
-  notificationBopper.classList.remove('is-visible');
-  notificationBopper.classList.add('is-leaving');
-  notificationLeaveTimerId = window.setTimeout(() => {
-    notificationLeaveTimerId = 0;
-    if (!notificationBopper) {
-      return;
-    }
+  if (!isGameRouteActive() || notificationStack.length === 0) {
+    notificationBopper.replaceChildren();
     notificationBopper.hidden = true;
-    notificationBopper.classList.remove('is-leaving');
-    maybeShowNextNotificationBopper();
-  }, 220);
-}
-
-function maybeShowNextNotificationBopper() {
-  if (!notificationBopper || !notificationBopperLabel) {
-    return;
-  }
-  if (notificationBopperShowing || notificationLeaveTimerId || notificationQueue.length === 0) {
-    return;
-  }
-  if (!isGameRouteActive()) {
-    notificationQueue.length = 0;
     return;
   }
 
-  const next = notificationQueue.shift();
-  if (!next) {
-    return;
+  const fragment = document.createDocumentFragment();
+  for (let index = 0; index < notificationStack.length; index += 1) {
+    const entry = notificationStack[index];
+    const pill = document.createElement('div');
+    pill.className = 'notification-bopper-pill';
+    pill.dataset.tone = entry.tone;
+    if (entry.leaving) {
+      pill.classList.add('is-leaving');
+    } else {
+      pill.classList.add('is-visible');
+    }
+    pill.style.setProperty('--stack-opacity', String(Math.max(0.28, 1 - (index * 0.16))));
+
+    const dot = document.createElement('span');
+    dot.className = 'notification-bopper-pill-dot';
+    dot.setAttribute('aria-hidden', 'true');
+    pill.appendChild(dot);
+
+    const copy = document.createElement('div');
+    copy.className = 'notification-bopper-pill-copy';
+
+    const label = document.createElement('p');
+    label.className = 'notification-bopper-pill-label';
+    label.textContent = entry.message;
+    copy.appendChild(label);
+
+    if (entry.meta) {
+      const meta = document.createElement('p');
+      meta.className = 'notification-bopper-pill-meta';
+      meta.textContent = entry.meta;
+      copy.appendChild(meta);
+    }
+
+    pill.appendChild(copy);
+    fragment.appendChild(pill);
   }
 
-  notificationBopperShowing = true;
-  notificationBopper.dataset.tone = next.tone;
-  notificationBopperLabel.textContent = next.message;
-  if (notificationBopperMeta) {
-    notificationBopperMeta.textContent = next.meta;
-  }
-
-  notificationBopper.classList.remove('is-leaving', 'is-visible');
+  notificationBopper.replaceChildren(fragment);
   notificationBopper.hidden = false;
-  void notificationBopper.offsetWidth;
-  notificationBopper.classList.add('is-visible');
-  notificationHideTimerId = window.setTimeout(() => {
-    notificationHideTimerId = 0;
-    dismissNotificationBopper();
-  }, next.ttlMs);
 }
 
 /**
  * @param {string} message
- * @param {{ tone?: 'info' | 'success' | 'warning' | 'danger', meta?: string, ttlMs?: number }} [opts]
+ * @param {{ tone?: 'info' | 'success' | 'warning' | 'danger', meta?: string, ttlMs?: number, key?: string }} [opts]
+ * @returns {string}
  */
 function queueNotificationBopper(message, opts = {}) {
-  if (!notificationBopper || !notificationBopperLabel) {
-    return;
+  if (!notificationBopper || !isGameRouteActive()) {
+    return '';
   }
 
   const normalizedMessage = typeof message === 'string' ? message.trim() : '';
   if (!normalizedMessage) {
-    return;
+    return '';
   }
 
   const tone = opts.tone === 'success' || opts.tone === 'warning' || opts.tone === 'danger'
@@ -1019,21 +1177,59 @@ function queueNotificationBopper(message, opts = {}) {
     : 'info';
   const ttlMsRaw = Number(opts.ttlMs);
   const ttlMs = Number.isFinite(ttlMsRaw)
-    ? Math.max(900, Math.min(10000, Math.round(ttlMsRaw)))
+    ? Math.max(900, Math.min(20000, Math.round(ttlMsRaw)))
     : 2800;
+  const keyCandidate = typeof opts.key === 'string' ? opts.key.trim() : '';
+  const key = keyCandidate || createNotificationBopperKey();
+  const meta = sanitizeBopperMeta(opts.meta);
 
-  notificationQueue.push({
-    message: normalizedMessage,
-    meta: sanitizeBopperMeta(opts.meta),
-    tone,
-    ttlMs
-  });
-
-  if (notificationQueue.length > 8) {
-    notificationQueue.shift();
+  let entry = notificationStack.find((item) => item.key === key) ?? null;
+  if (entry) {
+    clearNotificationEntryTimers(entry);
+    entry.message = normalizedMessage;
+    entry.meta = meta;
+    entry.tone = tone;
+    entry.ttlMs = ttlMs;
+    entry.leaving = false;
+  } else {
+    entry = {
+      key,
+      message: normalizedMessage,
+      meta,
+      tone,
+      ttlMs,
+      leaving: false,
+      hideTimerId: 0,
+      leaveTimerId: 0
+    };
+    notificationStack.unshift(entry);
   }
 
-  maybeShowNextNotificationBopper();
+  while (notificationStack.length > NOTIFICATION_STACK_LIMIT) {
+    removeNotificationEntryByIndex(notificationStack.length - 1);
+  }
+
+  renderNotificationBopperStack();
+
+  entry.hideTimerId = window.setTimeout(() => {
+    entry.hideTimerId = 0;
+    const activeEntry = notificationStack.find((item) => item.key === key);
+    if (!activeEntry || activeEntry.leaving) {
+      return;
+    }
+    activeEntry.leaving = true;
+    renderNotificationBopperStack();
+    activeEntry.leaveTimerId = window.setTimeout(() => {
+      activeEntry.leaveTimerId = 0;
+      const removeIndex = notificationStack.findIndex((item) => item.key === key);
+      if (removeIndex >= 0) {
+        removeNotificationEntryByIndex(removeIndex);
+      }
+      renderNotificationBopperStack();
+    }, NOTIFICATION_LEAVE_MS);
+  }, ttlMs);
+
+  return key;
 }
 
 function clearMatchResultTimers() {
@@ -1903,9 +2099,11 @@ function refreshMineHoverTargets() {
   mineCellVisualEntries.length = 0;
   mineCellVisualByIndex.clear();
   if (!activeRuntimeState?.worldRoot) {
+    hideWinnerBlankBlockVisual();
     return;
   }
 
+  attachWinnerBlankBlockVisual();
   activeRuntimeState.worldRoot.traverse((node) => {
     if (
       (!node?.isInstancedMesh && !node?.isMesh)
@@ -1958,6 +2156,9 @@ async function applyMap(nextMapData) {
   if (voxelRuntime) {
     voxelRuntime.setMineZones(mineZones);
   }
+  void ensureWinnerBlankBlockVisual().then(() => {
+    applyMineMaskToVisuals();
+  });
   refreshMineHoverTargets();
 
   firstPersonController.setSpawn(playerSpawnPosition, playerSpawnYaw);
@@ -2449,6 +2650,7 @@ function stopRoomSubscriptions() {
   roomLifecycleActionInFlight = false;
   sessionEnsureInFlight = false;
   roomCancelInFlight = false;
+  hideWinnerBlankBlockVisual();
   applyMineMaskToVisuals();
   syncRoomWaitOverlay();
   renderStreamStatus(activeRoomCode ? deriveRoomLifecycleStatusText() : 'Disconnected');
@@ -2458,6 +2660,11 @@ function stopRoomSubscriptions() {
 function parseMineFailure(error) {
   const text = asErrorText(error);
   const normalized = text.toLowerCase();
+  if (normalized.includes('cannot mine before room is active')
+    || normalized.includes('invalidstatus')
+    || normalized.includes('0x1770')) {
+    return 'Mine rejected: room is not Active yet.';
+  }
   if (normalized.includes('invalidcoordinate') || normalized.includes('0x1776')) {
     return 'Mine rejected: coordinate out of range.';
   }
@@ -2478,6 +2685,17 @@ function isAlreadyJoinedError(error) {
   return normalized.includes('alreadyjoined') || normalized.includes('0x1775');
 }
 
+function parseLifecycleFailure(error) {
+  const text = asErrorText(error);
+  const normalized = text.toLowerCase();
+  if (normalized.includes('network mismatch')
+    || normalized.includes('wrong network')
+    || normalized.includes('chain mismatch')) {
+    return 'Wallet network mismatch. Ensure wallet and app are both on Devnet.';
+  }
+  return text;
+}
+
 async function runLifecycleAutomationIfNeeded() {
   if (roomLifecycleActionInFlight || !roomRuntime || !activeRoomCode || !latestRoomSharedState) {
     return;
@@ -2487,10 +2705,10 @@ async function runLifecycleAutomationIfNeeded() {
     return;
   }
   const room = latestRoomSharedState;
-  const isCreator = room.creatorBase58 === wallet;
   const isWinner = room.winnerBase58 === wallet;
+  const isParticipant = room.playerOneBase58 === wallet || room.playerTwoBase58 === wallet;
 
-  if (room.status === 'WaitingForVrf' && isCreator) {
+  if (room.status === 'WaitingForVrf' && isParticipant) {
     roomLifecycleActionInFlight = true;
     try {
       queueNotificationBopper('Delegating room state…', { tone: 'info', meta: 'base layer' });
@@ -2501,7 +2719,7 @@ async function runLifecycleAutomationIfNeeded() {
     } catch (error) {
       queueNotificationBopper('Room activation failed.', {
         tone: 'danger',
-        meta: asErrorText(error),
+        meta: parseLifecycleFailure(error),
         ttlMs: 4200
       });
     } finally {
@@ -2525,7 +2743,7 @@ async function runLifecycleAutomationIfNeeded() {
     } catch (error) {
       queueNotificationBopper('Settlement step failed.', {
         tone: 'danger',
-        meta: asErrorText(error),
+        meta: parseLifecycleFailure(error),
         ttlMs: 4200
       });
     } finally {
@@ -2715,11 +2933,13 @@ async function submitOnChainMineFromHit(visualHit) {
   const sourceMaterial = resolveHitMaterial(visualHit);
   resolveMineHitPose(visualHit, mineBreakHitPosition, mineBreakHitNormal, mineBreakHitScale);
   mineBreakHitPosition.addScaledVector(mineBreakHitNormal, 0.05);
+  const mineNotificationKey = createNotificationBopperKey('mine');
 
   queueNotificationBopper('Sending mine tx…', {
+    key: mineNotificationKey,
     tone: 'info',
     meta: 'ER router',
-    ttlMs: 1400
+    ttlMs: MINE_PENDING_NOTIFICATION_TTL_MS
   });
 
   let mineResult = null;
@@ -2727,6 +2947,7 @@ async function submitOnChainMineFromHit(visualHit) {
     mineResult = await roomRuntime.mine(activeRoomCode, gameplayCell);
   } catch (error) {
     queueNotificationBopper('Mine failed.', {
+      key: mineNotificationKey,
       tone: 'danger',
       meta: parseMineFailure(error),
       ttlMs: 3600
@@ -2754,7 +2975,9 @@ async function submitOnChainMineFromHit(visualHit) {
     }
     clearOptimisticMinePending(bitIndex);
     queueNotificationBopper('Mine tx approved.', {
+      key: mineNotificationKey,
       tone: 'success',
+      ttlMs: 2800,
       meta: mineResult?.signature ? compactPublicKey(mineResult.signature) : 'confirmed'
     });
   } catch (error) {
@@ -2763,6 +2986,7 @@ async function submitOnChainMineFromHit(visualHit) {
       markOptimisticMineCell(bitIndex, false);
     }
     queueNotificationBopper('Mine rejected.', {
+      key: mineNotificationKey,
       tone: 'danger',
       meta: parseMineFailure(error),
       ttlMs: 3600
@@ -3159,16 +3383,36 @@ async function bootstrap() {
     }
 
     const walletPubkey = walletGateway.getState().publicKey;
-    if (walletPubkey !== roomCodeText) {
+    const preJoinState = await roomRuntime.fetchRoomState(roomCodeText, walletPubkey);
+    if (!preJoinState.roomShared) {
+      throw new Error('Room not found on chain.');
+    }
+
+    const isParticipantBeforeJoin = preJoinState.roomShared.playerOneBase58 === walletPubkey
+      || preJoinState.roomShared.playerTwoBase58 === walletPubkey;
+    const roomHasOpponent = preJoinState.roomShared.playerTwoBase58
+      && preJoinState.roomShared.playerTwoBase58 !== '11111111111111111111111111111111';
+
+    if (walletPubkey !== roomCodeText && !isParticipantBeforeJoin) {
+      if (roomHasOpponent) {
+        throw new Error('Wallet is not a participant in this room.');
+      }
       try {
         await roomRuntime.joinRoom(roomCodeText);
       } catch (error) {
         if (!isAlreadyJoinedError(error)) {
-          throw error;
-        }
-        const existing = await roomRuntime.fetchRoomState(roomCodeText, walletPubkey);
-        if (existing.roomShared?.playerTwoBase58 !== walletPubkey) {
-          throw error;
+          const existing = await roomRuntime.fetchRoomState(roomCodeText, walletPubkey);
+          const isParticipantOnRetry = existing.roomShared
+            && (existing.roomShared.playerOneBase58 === walletPubkey
+              || existing.roomShared.playerTwoBase58 === walletPubkey);
+          if (!isParticipantOnRetry) {
+            throw error;
+          }
+        } else {
+          const existing = await roomRuntime.fetchRoomState(roomCodeText, walletPubkey);
+          if (existing.roomShared?.playerTwoBase58 !== walletPubkey) {
+            throw error;
+          }
         }
       }
     }

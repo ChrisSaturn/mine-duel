@@ -60,6 +60,7 @@ Last updated: 2026-03-22
   - Uses explicit delegation support accounts (`buffer_*`, `delegation_record_*`, `delegation_metadata_*`) and validates all expected PDAs before CPI.
 - `request_winner_vrf(client_seed)`
   - Requests VRF once player two has joined.
+  - Authorized caller is either participant (`player_one` or `player_two`) via direct signer or valid session-token authority, enabling non-creator activation flows without extension-wallet ER signing.
   - Registers callback to `consume_winner_vrf`.
 - `consume_winner_vrf(randomness)`
   - Validates VRF callback identity signer.
@@ -72,6 +73,8 @@ Last updated: 2026-03-22
   - Commits shared state to base layer from ER.
 - `finalize_win()`
   - Winner-authorized, ER-routed commit + undelegate trigger.
+  - Authorization accepts winner direct signer or session-token authority.
+  - Does not transfer escrow; it only commits and schedules undelegation back to base.
   - Schedules return of delegated state to base layer.
 - `settle_win_payout()`
   - Base-layer winner settlement after ownership is restored.
@@ -102,6 +105,7 @@ Routing note:
 - Session key validation:
   - validates authority, token PDA derivation, and expiry.
   - falls back to main signer if session token absent.
+  - applies to ER actions that accept optional session auth (`request_winner_vrf`, `mine`, `finalize_win`).
 - VRF callback hard check:
   - `vrf_program_identity` must equal `ephemeral_vrf_sdk::consts::VRF_PROGRAM_IDENTITY`.
 - Coordinates:
