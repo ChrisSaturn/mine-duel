@@ -15,6 +15,7 @@ This is the active client prototype in the workspace, not the final production c
 - Runtime asset URLs are resolved through `import.meta.env.BASE_URL` so hosted subpaths (for example `/game/`) still load maps/models correctly.
 - Dev-only editor tooling lives in `src/dev/editorBootstrap.js` and is dynamically imported only in dev mode.
 - Player runtime collision + grounding now live entirely in `src/runtime/firstPersonControllerRuntime.js` (capsule-style horizontal blocking, ground probe snap, jump/gravity integration, and spawn reset flow).
+- Runtime jump tuning is increased (`CONFIG.jumpVelocity = 6.2`) so the player can reliably jump onto block tops.
 - Runtime object collision now prefers explicit template colliders (`userData.mapCollider=true`) and otherwise uses implicit per-mesh colliders for world elements (with box-bounds fallback only when no mesh is available).
 - Procedural `cube-world-ground` now uses explicit per-block instanced mesh colliders (grass + mine patch ore), so mining a block removes both its visual instance and its collider, letting the block below become the next support surface.
 - Synthetic mine-column grounding has been removed; mine traversal support now comes from real block colliders only.
@@ -44,6 +45,7 @@ This is the active client prototype in the workspace, not the final production c
 - Lobby character stage/canvas height is increased across desktop/tablet/mobile breakpoints so the bottom character shadow renders fully in preview.
 - In-game HUD styling (`src/style.css`) now follows the Lobby UI visual language (shared palette/tokens, pixel card gradients, chip-style wallet controls, lobby-colored sprint bar, and updated pointer-lock instruction card), while preserving existing HUD IDs/runtime logic.
 - In-game HUD now includes a default bottom-right notification bopper (`#notification-bopper`) with lobby-aligned styling, queued runtime alerts, tone states (`info`, `success`, `warning`, `danger`), and game-route-only display.
+- Mine transaction UX now emits lifecycle boppers: `Sending mine tx…` on dispatch, `Mine tx approved.` on confirmation, danger-tone failure/rejection boppers when send/confirm fails, and timeout rollback warnings that restore the optimistically hidden block if confirmation stalls (`12s` window).
 - Runtime player model uses a slower, extra-aggressive procedural walk-cycle limb animation while moving on ground (arm/leg swing amplitudes doubled to `+/-40` with a forward-biased `-30` arm center, and `+/-60` legs).
 - Runtime camera anchor now keeps local `X` fixed and samples the bind/rebind anchor from head-mesh world bounds (higher eye-height ratio), with fallback to head-node origin when bounds are unavailable, preserving stable first-person eye placement while preventing yaw-induced lateral drift.
 - Runtime camera sampled `Z` anchor is clamped to the capsule envelope (`~45%` of collider radius), preventing camera placement outside the player pill.

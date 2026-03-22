@@ -66,6 +66,10 @@ Routing summary:
   - `RoomShared`
   - `WinnerState`
   - local-player `PlayerReveal`
+- Cross-RPC state reconciliation policy:
+  - If base-layer account owner is delegation program (`DELeGG...`), base snapshots are treated as delegated/stale and ER snapshots are authoritative.
+  - After undelegation (base owner returns to the Mine Duel program), base snapshots become authoritative for lifecycle and payout settlement.
+  - ER/base slot numbers are not compared against each other for authority; ownership determines the active source.
 - Mine patch visibility/fog is rebuilt directly from `mined_mask` + local `revealed_mask` account data.
 - No world-profile stream dependency and no managed PER room snapshot ingestion in v1.
 
@@ -95,6 +99,8 @@ Routing summary:
 - Unauthorized mine/callback/settlement reject.
 - Wrong routing (base-vs-ER mismatch) reject due to account ownership guard.
 - Stale/expired session token requires user-visible re-auth path.
+- Mine instruction UX shows full tx lifecycle boppers: `Sending mine tx…` on dispatch, `Mine tx approved.` on confirmation, and existing `Mine failed.`/`Mine rejected.` on error edges.
+- Optimistic mined-cell hides are rollback-safe: if mine confirmation does not land within client timeout (`12s`), the cell is restored in view and can be re-mined.
 
 ## Failure and recovery policy
 
@@ -102,3 +108,4 @@ Routing summary:
 - Room cancel in `WaitingForOpponent` is terminal for that room and clears local active-room context before returning to lobby.
 - On `won`/`finalize_win` path, client holds in UI `Finalized` until base confirms `PayoutSettled`.
 - On reload, room state is reconstructed from subscriptions only and any in-flight mining state is re-rendered from chain state.
+- If a mine tx stalls (no timely confirmation), the client automatically rolls back the optimistic hide and re-shows that block for retry; if chain state later confirms the same cell as mined, subscription state will hide it again deterministically.

@@ -315,6 +315,21 @@ function roomStatusToLifecycleState(roomShared) {
   }
 }
 
+function isDelegationOwner(owner) {
+  return owner instanceof PublicKey
+    && owner.equals(ADDRESSES.delegationProgram);
+}
+
+function pickPreferredAccountSnapshot({ erSnapshot = null, baseSnapshot = null } = {}) {
+  if (isDelegationOwner(baseSnapshot?.owner)) {
+    return erSnapshot || baseSnapshot || null;
+  }
+  if (baseSnapshot) {
+    return baseSnapshot;
+  }
+  return erSnapshot || null;
+}
+
 function getCellIndex(cell, dims) {
   if (!cell || !Array.isArray(dims) || dims.length < 3) {
     return -1;
@@ -476,22 +491,34 @@ export function createRoomRuntime({
     };
   }
 
-  async function fetchAccountFirst(pubkey, decoder) {
-    const erInfo = await erConnection.getAccountInfo(pubkey, commitment);
-    if (erInfo?.data) {
-      const decoded = decoder(erInfo.data);
-      if (decoded) {
-        return { decoded, source: 'er', owner: erInfo.owner, lamports: erInfo.lamports };
-      }
+  function decodeAccountSnapshot(accountInfo, decoder, source) {
+    if (!accountInfo?.data) {
+      return null;
     }
-    const baseInfo = await baseConnection.getAccountInfo(pubkey, commitment);
-    if (baseInfo?.data) {
-      const decoded = decoder(baseInfo.data);
-      if (decoded) {
-        return { decoded, source: 'base', owner: baseInfo.owner, lamports: baseInfo.lamports };
-      }
+    const decoded = decoder(accountInfo.data);
+    if (!decoded) {
+      return null;
     }
-    return null;
+    return {
+      decoded,
+      source,
+      owner: accountInfo.owner,
+      lamports: accountInfo.lamports
+    };
+  }
+
+  async function fetchAccountSnapshots(pubkey, decoder) {
+    const [erInfo, baseInfo] = await Promise.all([
+      erConnection.getAccountInfo(pubkey, commitment),
+      baseConnection.getAccountInfo(pubkey, commitment)
+    ]);
+    const erSnapshot = decodeAccountSnapshot(erInfo, decoder, 'er');
+    const baseSnapshot = decodeAccountSnapshot(baseInfo, decoder, 'base');
+    return {
+      erSnapshot,
+      baseSnapshot,
+      preferredSnapshot: pickPreferredAccountSnapshot({ erSnapshot, baseSnapshot })
+    };
   }
 
   async function fetchRoomState(creatorPubkey, localPlayerPubkey = null) {
@@ -500,8 +527,8 @@ export function createRoomRuntime({
       ? localPlayerPubkey
       : (localPlayerPubkey ? new PublicKey(localPlayerPubkey) : null);
     const context = buildContextFromCreator(creator, creator, localPlayer || null);
-    const roomResult = await fetchAccountFirst(context.room, decodeRoomShared);
-    if (!roomResult) {
+    const roomSnapshots = await fetchAccountSnapshots(context.room, decodeRoomShared);
+    if (!roomSnapshots.preferredSnapshot) {
       return {
         context,
         roomShared: null,
@@ -511,13 +538,13 @@ export function createRoomRuntime({
       };
     }
 
-    const roomShared = roomResult.decoded;
+    const roomShared = roomSnapshots.preferredSnapshot.decoded;
     const fullContext = buildContextFromCreator(
       creator,
       roomShared.playerOne,
       roomShared.playerTwo
     );
-    const winnerResult = await fetchAccountFirst(fullContext.winnerState, decodeWinnerState);
+    const winnerSnapshots = await fetchAccountSnapshots(fullContext.winnerState, decodeWinnerState);
 
     let playerReveal = null;
     if (localPlayer) {
@@ -525,8 +552,8 @@ export function createRoomRuntime({
         [REVEAL_SEED, fullContext.room.toBuffer(), localPlayer.toBuffer()],
         resolvedProgramId
       )[0];
-      const revealResult = await fetchAccountFirst(localRevealPda, decodePlayerReveal);
-      playerReveal = revealResult?.decoded || null;
+      const revealSnapshots = await fetchAccountSnapshots(localRevealPda, decodePlayerReveal);
+      playerReveal = revealSnapshots.preferredSnapshot?.decoded || null;
       fullContext.localReveal = localRevealPda;
       fullContext.localRevealBase58 = localRevealPda.toBase58();
     }
@@ -534,7 +561,7 @@ export function createRoomRuntime({
     return {
       context: fullContext,
       roomShared,
-      winnerState: winnerResult?.decoded || null,
+      winnerState: winnerSnapshots.preferredSnapshot?.decoded || null,
       playerReveal,
       lifecycleState: roomStatusToLifecycleState(roomShared)
     };
@@ -959,6 +986,11 @@ export function createRoomRuntime({
     )[0];
 
     const latestSlots = new Map();
+    const latestBySource = {
+      room: { er: null, base: null },
+      winner: { er: null, base: null },
+      reveal: { er: null, base: null }
+    };
     let current = {
       roomShared: null,
       winnerState: null,
@@ -980,12 +1012,13 @@ export function createRoomRuntime({
       }
     }
 
-    function applyUpdate(tag, slot, decoded) {
-      const prevSlot = latestSlots.get(tag) || 0;
-      if (slot < prevSlot) {
-        return;
-      }
-      latestSlots.set(tag, slot);
+    function applyPreferredSnapshot(tag) {
+      const snapshots = latestBySource[tag] || {};
+      const preferredSnapshot = pickPreferredAccountSnapshot({
+        erSnapshot: snapshots.er,
+        baseSnapshot: snapshots.base
+      });
+      const decoded = preferredSnapshot?.decoded || null;
       if (tag === 'room') {
         current = { ...current, roomShared: decoded };
       } else if (tag === 'winner') {
@@ -993,6 +1026,22 @@ export function createRoomRuntime({
       } else if (tag === 'reveal') {
         current = { ...current, playerReveal: decoded };
       }
+    }
+
+    function applyUpdate(tag, source, slot, accountInfo, decoded) {
+      const key = `${tag}:${source}`;
+      const prevSlot = latestSlots.get(key) || 0;
+      if (slot < prevSlot) {
+        return;
+      }
+      latestSlots.set(key, slot);
+      latestBySource[tag][source] = {
+        decoded,
+        source,
+        owner: accountInfo.owner,
+        lamports: accountInfo.lamports
+      };
+      applyPreferredSnapshot(tag);
       emit();
     }
 
@@ -1013,7 +1062,7 @@ export function createRoomRuntime({
             if (!decoded) {
               return;
             }
-            applyUpdate(target.tag, Number(ctx?.slot) || 0, decoded);
+            applyUpdate(target.tag, source, Number(ctx?.slot) || 0, accountInfo, decoded);
           },
           commitment
         );
@@ -1022,20 +1071,20 @@ export function createRoomRuntime({
     }
 
     Promise.all([
-      fetchAccountFirst(roomPda, decodeRoomShared),
-      fetchAccountFirst(winnerPda, decodeWinnerState),
-      fetchAccountFirst(localRevealPda, decodePlayerReveal)
+      fetchAccountSnapshots(roomPda, decodeRoomShared),
+      fetchAccountSnapshots(winnerPda, decodeWinnerState),
+      fetchAccountSnapshots(localRevealPda, decodePlayerReveal)
     ])
-      .then(([roomResult, winnerResult, revealResult]) => {
-        if (roomResult?.decoded) {
-          current.roomShared = roomResult.decoded;
-        }
-        if (winnerResult?.decoded) {
-          current.winnerState = winnerResult.decoded;
-        }
-        if (revealResult?.decoded) {
-          current.playerReveal = revealResult.decoded;
-        }
+      .then(([roomSnapshots, winnerSnapshots, revealSnapshots]) => {
+        latestBySource.room.er = roomSnapshots.erSnapshot;
+        latestBySource.room.base = roomSnapshots.baseSnapshot;
+        latestBySource.winner.er = winnerSnapshots.erSnapshot;
+        latestBySource.winner.base = winnerSnapshots.baseSnapshot;
+        latestBySource.reveal.er = revealSnapshots.erSnapshot;
+        latestBySource.reveal.base = revealSnapshots.baseSnapshot;
+        applyPreferredSnapshot('room');
+        applyPreferredSnapshot('winner');
+        applyPreferredSnapshot('reveal');
         emit();
       })
       .catch((error) => {

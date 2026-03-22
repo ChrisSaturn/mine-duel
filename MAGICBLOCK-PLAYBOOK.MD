@@ -403,7 +403,13 @@ Related architecture docs:
 - Without a token, signer must be the authority.
 - Winner location is only set after VRF callback and is kept in private delegated state.
 
-### 8.6 Latest Full Devnet E2E (2026-03-22 UTC)
+### 8.6 Client optimistic-mine rollback policy
+
+- Client mine visuals are optimistic (block hidden immediately after tx send) but rollback-safe.
+- If `mine` confirmation fails or does not land within `12s`, client restores the block visual so the player can retry.
+- If chain state later marks that same cell as mined, subscription-derived masks hide it again deterministically.
+
+### 8.7 Latest Full Devnet E2E (2026-03-22 UTC)
 
 Program + deploy:
 - Program id: `4b2q3K4cgr1P8FkjbcQ8nssDxLb9dhdVgVtrknvn5igJ`

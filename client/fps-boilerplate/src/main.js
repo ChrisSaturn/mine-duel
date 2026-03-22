@@ -74,7 +74,7 @@ const CONFIG = {
   sprintSpeed: 7,
   maxVelocityChange: 10,
   gravity: -9.81,
-  jumpVelocity: 5,
+  jumpVelocity: 6.2,
   mouseSensitivity: 2,
   mouseLookSpeed: Math.PI / 1800,
   playerModelScale: 1,
@@ -140,6 +140,7 @@ const MINE_SWAY_Y_FREQ_BASE = 8;
 const MINE_SWAY_Y_FREQ_MOVEMENT = 6;
 const MINE_SWING_JITTER_FREQ = 92;
 const MINE_SWING_JITTER_AMOUNT = 0.0024;
+const MINE_CONFIRMATION_TIMEOUT_MS = 12000;
 const ROOM_CONTEXT_STORAGE_KEY = 'mine-duel.active-room-context.v1';
 let selectedPlayerModelPath = DEFAULT_PLAYER_MODEL_PATH;
 
@@ -303,6 +304,7 @@ const mineHoverTargets = [];
 const mineCellVisualEntries = [];
 const mineCellVisualByIndex = new Map();
 const optimisticMinedCellIndexes = new Set();
+const optimisticMinePendingByBitIndex = new Map();
 const mineBreakParticles = [];
 let lastMineAtMs = 0;
 let atmosphereRuntime = null;
@@ -859,6 +861,62 @@ function markOptimisticMineCell(cellIndex, enabled) {
     optimisticMinedCellIndexes.delete(cellIndex);
   }
   applyMineMaskToVisuals();
+}
+
+function trackOptimisticMinePending(cellIndex, signature = '') {
+  if (!Number.isInteger(cellIndex) || cellIndex < 0) {
+    return;
+  }
+  optimisticMinePendingByBitIndex.set(cellIndex, {
+    startedAtMs: performance.now(),
+    signature: typeof signature === 'string' ? signature : ''
+  });
+}
+
+function clearOptimisticMinePending(cellIndex) {
+  if (!Number.isInteger(cellIndex) || cellIndex < 0) {
+    return;
+  }
+  optimisticMinePendingByBitIndex.delete(cellIndex);
+}
+
+function rollbackExpiredOptimisticMines(nowMs = performance.now()) {
+  if (optimisticMinePendingByBitIndex.size === 0) {
+    return;
+  }
+
+  const timedOutCellIndexes = [];
+  for (const [cellIndex, pending] of optimisticMinePendingByBitIndex.entries()) {
+    const startedAtMs = Number(pending?.startedAtMs);
+    if (!Number.isFinite(startedAtMs)) {
+      optimisticMinePendingByBitIndex.delete(cellIndex);
+      continue;
+    }
+    if ((nowMs - startedAtMs) >= MINE_CONFIRMATION_TIMEOUT_MS) {
+      timedOutCellIndexes.push(cellIndex);
+    }
+  }
+
+  if (timedOutCellIndexes.length === 0) {
+    return;
+  }
+
+  for (const cellIndex of timedOutCellIndexes) {
+    clearOptimisticMinePending(cellIndex);
+    markOptimisticMineCell(cellIndex, false);
+  }
+
+  const restoredCount = timedOutCellIndexes.length;
+  queueNotificationBopper(
+    restoredCount === 1 ? 'Mine confirmation timed out.' : 'Mine confirmations timed out.',
+    {
+      tone: 'warning',
+      meta: restoredCount === 1
+        ? 'Block restored for retry'
+        : `${restoredCount} blocks restored for retry`,
+      ttlMs: 3600
+    }
+  );
 }
 
 function clearNotificationTimers() {
@@ -2386,6 +2444,7 @@ function stopRoomSubscriptions() {
   latestWinnerState = null;
   latestPlayerRevealState = null;
   optimisticMinedCellIndexes.clear();
+  optimisticMinePendingByBitIndex.clear();
   roomLifecycleState = 'Lobby';
   roomLifecycleActionInFlight = false;
   sessionEnsureInFlight = false;
@@ -2495,6 +2554,7 @@ function handleRoomStateUpdate(nextState) {
     for (const idx of [...optimisticMinedCellIndexes]) {
       if (roomRuntime.maskBitSet(latestWinnerState.minedMask, idx)) {
         optimisticMinedCellIndexes.delete(idx);
+        optimisticMinePendingByBitIndex.delete(idx);
       }
     }
   }
@@ -2656,6 +2716,12 @@ async function submitOnChainMineFromHit(visualHit) {
   resolveMineHitPose(visualHit, mineBreakHitPosition, mineBreakHitNormal, mineBreakHitScale);
   mineBreakHitPosition.addScaledVector(mineBreakHitNormal, 0.05);
 
+  queueNotificationBopper('Sending mine tx…', {
+    tone: 'info',
+    meta: 'ER router',
+    ttlMs: 1400
+  });
+
   let mineResult = null;
   try {
     mineResult = await roomRuntime.mine(activeRoomCode, gameplayCell);
@@ -2671,6 +2737,7 @@ async function submitOnChainMineFromHit(visualHit) {
   const bitIndex = Number(mineResult?.bitIndex);
   if (Number.isInteger(bitIndex) && bitIndex >= 0) {
     markOptimisticMineCell(bitIndex, true);
+    trackOptimisticMinePending(bitIndex, mineResult?.signature || '');
   }
 
   spawnMineBreakDebris({
@@ -2685,7 +2752,13 @@ async function submitOnChainMineFromHit(visualHit) {
     if (confirmation?.value?.err) {
       throw new Error(JSON.stringify(confirmation.value.err));
     }
+    clearOptimisticMinePending(bitIndex);
+    queueNotificationBopper('Mine tx approved.', {
+      tone: 'success',
+      meta: mineResult?.signature ? compactPublicKey(mineResult.signature) : 'confirmed'
+    });
   } catch (error) {
+    clearOptimisticMinePending(bitIndex);
     if (Number.isInteger(bitIndex) && bitIndex >= 0) {
       markOptimisticMineCell(bitIndex, false);
     }
@@ -2971,6 +3044,7 @@ function animate() {
   updateRuntimePlayerWalkAnimation(deltaSeconds);
   updateFirstPersonPickaxeViewModel(deltaSeconds, nowMs * 0.001, gameplayActive);
   updateMineBreakParticles(deltaSeconds);
+  rollbackExpiredOptimisticMines(nowMs);
   updateRuntimeHeadFromCamera();
   syncCameraToHeadAnchor();
   atmosphereRuntime?.update({

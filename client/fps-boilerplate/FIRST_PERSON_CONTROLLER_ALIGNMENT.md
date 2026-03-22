@@ -55,6 +55,9 @@ Replace the previous split first-person implementation with a fresh, single-runt
    - tool root/arm scale remains `0.22`, while pickaxe scale is decoupled and set to world-scale `1.0`
    - right-arm viewmodel keeps source-rig handedness/orientation (no X-axis arm mirror) to preserve correct shoulder-to-hand direction
    - visibility is gameplay-only (hidden in editor), with a more outward resting pickaxe orientation and an aggressive but slower left-click mine swing that clearly reads up-then-down (anticipation/impact/recovery), plus impact jitter + emissive energy pulse + idle sway animation
+11. Increased jump tuning to improve block traversal:
+   - `CONFIG.jumpVelocity` raised from `5` to `6.2`
+   - target outcome: reliable top-of-block landing during normal movement
 
 ## New Responsibility Split
 
