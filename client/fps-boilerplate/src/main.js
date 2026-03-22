@@ -380,6 +380,9 @@ function isBreakableMineTargetObject(object) {
   if (object.userData?.mineVisualRemoved === true) {
     return false;
   }
+  if (object.userData?.winnerBlankMineTarget === true) {
+    return true;
+  }
   if (typeof object.userData?.minePatchVariant === 'string') {
     return true;
   }
@@ -411,6 +414,16 @@ function getMineCenterRaycastHit(cameraRef, maxDistance = MINE_BREAK_MAX_DISTANC
 function resolveGameplayCellFromHit(hit) {
   if (!hit?.object) {
     return null;
+  }
+
+  const explicitCellCoord = hit.object.userData?.minePatchCellCoord;
+  if (Array.isArray(explicitCellCoord) && explicitCellCoord.length >= 3) {
+    return {
+      x: Number(explicitCellCoord[0]) || 0,
+      y: Number(explicitCellCoord[1]) || 0,
+      z: Number(explicitCellCoord[2]) || 0,
+      inBounds: true
+    };
   }
 
   if (hit.object.isInstancedMesh && Number.isInteger(hit.instanceId)) {
@@ -803,6 +816,26 @@ function getMineCellYFromBitIndex(cellIndex, dims = resolveMinePatchDims()) {
   return Math.floor(cellIndex / layerSize);
 }
 
+function getMineCellCoordsFromBitIndex(cellIndex, dims = resolveMinePatchDims()) {
+  if (!Number.isInteger(cellIndex) || cellIndex < 0 || !Array.isArray(dims) || dims.length < 3) {
+    return null;
+  }
+  const width = Math.max(1, Math.floor(Math.abs(Number(dims[0]) || 16)));
+  const height = Math.max(1, Math.floor(Math.abs(Number(dims[1]) || 8)));
+  const depth = Math.max(1, Math.floor(Math.abs(Number(dims[2]) || 16)));
+  const layerSize = width * depth;
+  const maxCellCount = layerSize * height;
+  if (!Number.isFinite(layerSize) || layerSize <= 0 || cellIndex >= maxCellCount) {
+    return null;
+  }
+
+  const y = Math.floor(cellIndex / layerSize);
+  const layerOffset = cellIndex - (y * layerSize);
+  const z = Math.floor(layerOffset / width);
+  const x = layerOffset - (z * width);
+  return { x, y, z };
+}
+
 function isMineCellVisuallyExposedByDefault(cellIndex, dims = resolveMinePatchDims()) {
   return getMineCellYFromBitIndex(cellIndex, dims) === MINE_VISUAL_EXPOSED_LAYER_Y;
 }
@@ -852,6 +885,15 @@ function updateWinnerBlankBlockVisualFromEntry(entry) {
   winnerBlankBlockVisual.position.copy(winnerBlankBlockWorldPosition);
   winnerBlankBlockVisual.quaternion.copy(winnerBlankBlockWorldQuaternion);
   winnerBlankBlockVisual.scale.copy(winnerBlankBlockWorldScale);
+  const winnerCellCoords = getMineCellCoordsFromBitIndex(entry.cellIndex, resolveMinePatchDims());
+  if (winnerCellCoords) {
+    winnerBlankBlockVisual.traverse((node) => {
+      if (!node?.isMesh) {
+        return;
+      }
+      node.userData.minePatchCellCoord = [winnerCellCoords.x, winnerCellCoords.y, winnerCellCoords.z];
+    });
+  }
   winnerBlankBlockVisual.visible = true;
 }
 
@@ -876,6 +918,9 @@ async function ensureWinnerBlankBlockVisual() {
           node.castShadow = true;
           node.receiveShadow = true;
           node.frustumCulled = false;
+          node.userData.minePatchHoverTarget = true;
+          node.userData.winnerBlankMineTarget = true;
+          node.userData.minePatchVariant = 'winner-blank';
         });
         winnerBlankBlockVisual = visual;
         attachWinnerBlankBlockVisual();
@@ -2157,7 +2202,7 @@ async function applyMap(nextMapData) {
     voxelRuntime.setMineZones(mineZones);
   }
   void ensureWinnerBlankBlockVisual().then(() => {
-    applyMineMaskToVisuals();
+    refreshMineHoverTargets();
   });
   refreshMineHoverTargets();
 

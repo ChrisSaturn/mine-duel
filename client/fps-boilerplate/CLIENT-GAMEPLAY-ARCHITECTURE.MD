@@ -1,6 +1,6 @@
 # MINE DUEL CLIENT GAMEPLAY ARCHITECTURE (V1)
 
-Last updated: 2026-03-22
+Last updated: 2026-03-23
 
 ## Scope
 
@@ -76,6 +76,7 @@ Routing summary:
 - Mine patch visibility/fog is rebuilt directly from `mined_mask` + local `revealed_mask` account data.
 - Client render baseline: mine patch `y=0` (top visual layer) is forced visible on load for UX parity; deeper layers still follow `revealed_mask` + mined-state gating.
 - Winner-cell visual policy: when `winner_cell` is visible to the local player (revealed + not mined), the default mined-patch variant mesh is suppressed and replaced with `Block_Blank` (`blank_block`) rendering.
+- Winner-cell targeting policy: the replacement `Block_Blank` visual is registered as a mine hover/raycast target and carries explicit gameplay-cell coordinates so clicking it routes to the same `mine(x,y,z)` cell as the hidden default mesh.
 - No world-profile stream dependency and no managed PER room snapshot ingestion in v1.
 
 ## Runtime modules
