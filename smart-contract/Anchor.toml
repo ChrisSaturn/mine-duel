@@ -6,14 +6,14 @@ resolution = true
 skip-lint = false
 
 [programs.devnet]
-mine_duel = "Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkgPq9G8t6xQ9"
+mine_duel = "4b2q3K4cgr1P8FkjbcQ8nssDxLb9dhdVgVtrknvn5igJ"
 
 [registry]
 url = "https://api.apr.dev"
 
 [provider]
 cluster = "Devnet"
-wallet = "~/.config/solana/id.json"
+wallet = "./wallets/deployer.json"
 
 [scripts]
 test = "npm run ts-mocha -- --exit"

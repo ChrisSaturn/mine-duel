@@ -1,0 +1,14 @@
+/Volumes/Personal Data/Mine Duel/smart-contract/target/release/deps/serde-6e8e89ca111d8676.d: /Users/chrissaturn/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/lib.rs /Users/chrissaturn/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/integer128.rs /Users/chrissaturn/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/mod.rs /Users/chrissaturn/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/de.rs /Users/chrissaturn/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/ser.rs /Volumes/Personal\ Data/Mine\ Duel/smart-contract/target/release/build/serde-dda1ac8c48096525/out/private.rs
+
+/Volumes/Personal Data/Mine Duel/smart-contract/target/release/deps/libserde-6e8e89ca111d8676.rlib: /Users/chrissaturn/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/lib.rs /Users/chrissaturn/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/integer128.rs /Users/chrissaturn/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/mod.rs /Users/chrissaturn/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/de.rs /Users/chrissaturn/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/ser.rs /Volumes/Personal\ Data/Mine\ Duel/smart-contract/target/release/build/serde-dda1ac8c48096525/out/private.rs
+
+/Volumes/Personal Data/Mine Duel/smart-contract/target/release/deps/libserde-6e8e89ca111d8676.rmeta: /Users/chrissaturn/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/lib.rs /Users/chrissaturn/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/integer128.rs /Users/chrissaturn/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/mod.rs /Users/chrissaturn/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/de.rs /Users/chrissaturn/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/ser.rs /Volumes/Personal\ Data/Mine\ Duel/smart-contract/target/release/build/serde-dda1ac8c48096525/out/private.rs
+
+/Users/chrissaturn/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/lib.rs:
+/Users/chrissaturn/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/integer128.rs:
+/Users/chrissaturn/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/mod.rs:
+/Users/chrissaturn/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/de.rs:
+/Users/chrissaturn/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/ser.rs:
+/Volumes/Personal\ Data/Mine\ Duel/smart-contract/target/release/build/serde-dda1ac8c48096525/out/private.rs:
+
+# env-dep:OUT_DIR=/Volumes/Personal Data/Mine Duel/smart-contract/target/release/build/serde-dda1ac8c48096525/out

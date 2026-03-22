@@ -6,9 +6,9 @@ use ephemeral_rollups_sdk::ephem::{commit_accounts, commit_and_undelegate_accoun
 use ephemeral_vrf_sdk::anchor::vrf;
 use ephemeral_vrf_sdk::instructions::{create_request_randomness_ix, RequestRandomnessParams};
 use ephemeral_vrf_sdk::types::SerializableAccountMeta;
-use session_keys::{SessionToken, SessionError};
+use session_keys::SessionToken;
 
-declare_id!("Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkgPq9G8t6xQ9");
+declare_id!("4b2q3K4cgr1P8FkjbcQ8nssDxLb9dhdVgVtrknvn5igJ");
 
 const SEED_ROOM: &[u8] = b"room";
 const SEED_VAULT: &[u8] = b"vault";
@@ -80,9 +80,20 @@ pub mod mine_duel {
 
     pub fn cancel_room_prejoin(ctx: Context<CancelRoomPrejoin>) -> Result<()> {
         let room = &ctx.accounts.room;
-        require!(room.status == RoomStatus::WaitingForOpponent, MineDuelError::InvalidStatus);
-        require_keys_eq!(room.creator, ctx.accounts.creator.key(), MineDuelError::Unauthorized);
-        require_keys_eq!(room.player_two, Pubkey::default(), MineDuelError::InvalidStatus);
+        require!(
+            room.status == RoomStatus::WaitingForOpponent,
+            MineDuelError::InvalidStatus
+        );
+        require_keys_eq!(
+            room.creator,
+            ctx.accounts.creator.key(),
+            MineDuelError::Unauthorized
+        );
+        require_keys_eq!(
+            room.player_two,
+            Pubkey::default(),
+            MineDuelError::InvalidStatus
+        );
         Ok(())
     }
 
@@ -90,9 +101,16 @@ pub mod mine_duel {
         let room = &mut ctx.accounts.room;
         let player = ctx.accounts.player.key();
 
-        require!(room.status == RoomStatus::WaitingForOpponent, MineDuelError::InvalidStatus);
+        require!(
+            room.status == RoomStatus::WaitingForOpponent,
+            MineDuelError::InvalidStatus
+        );
         require_keys_neq!(player, room.player_one, MineDuelError::Unauthorized);
-        require_keys_eq!(room.player_two, Pubkey::default(), MineDuelError::AlreadyJoined);
+        require_keys_eq!(
+            room.player_two,
+            Pubkey::default(),
+            MineDuelError::AlreadyJoined
+        );
 
         transfer(
             CpiContext::new(
@@ -124,15 +142,36 @@ pub mod mine_duel {
     }
 
     pub fn delegate_private_state(ctx: Context<DelegatePrivateState>) -> Result<()> {
-        let room_state = Account::<RoomShared>::try_from(&ctx.accounts.room)?;
+        let room_state = {
+            let room_data = ctx.accounts.room.try_borrow_data()?;
+            let mut room_data_slice: &[u8] = &room_data;
+            RoomShared::try_deserialize(&mut room_data_slice)?
+        };
         require!(
-            room_state.status == RoomStatus::WaitingForVrf || room_state.status == RoomStatus::Active,
+            room_state.status == RoomStatus::WaitingForVrf
+                || room_state.status == RoomStatus::Active,
             MineDuelError::InvalidStatus
         );
-        require_keys_neq!(room_state.player_two, Pubkey::default(), MineDuelError::PlayerTwoMissing);
-        require_keys_eq!(room_state.creator, ctx.accounts.room_creator.key(), MineDuelError::Unauthorized);
-        require_keys_eq!(room_state.player_one, ctx.accounts.player_one.key(), MineDuelError::Unauthorized);
-        require_keys_eq!(room_state.player_two, ctx.accounts.player_two.key(), MineDuelError::Unauthorized);
+        require_keys_neq!(
+            room_state.player_two,
+            Pubkey::default(),
+            MineDuelError::PlayerTwoMissing
+        );
+        require_keys_eq!(
+            room_state.creator,
+            ctx.accounts.room_creator.key(),
+            MineDuelError::Unauthorized
+        );
+        require_keys_eq!(
+            room_state.player_one,
+            ctx.accounts.player_one.key(),
+            MineDuelError::Unauthorized
+        );
+        require_keys_eq!(
+            room_state.player_two,
+            ctx.accounts.player_two.key(),
+            MineDuelError::Unauthorized
+        );
 
         let maybe_validator = ctx.accounts.validator.as_ref().map(|v| v.key());
         let room_key = ctx.accounts.room.key();
@@ -166,7 +205,11 @@ pub mod mine_duel {
 
         ctx.accounts.delegate_player_one_reveal(
             &ctx.accounts.payer,
-            &[SEED_REVEAL, room_key.as_ref(), room_state.player_one.as_ref()],
+            &[
+                SEED_REVEAL,
+                room_key.as_ref(),
+                room_state.player_one.as_ref(),
+            ],
             DelegateConfig {
                 validator: maybe_validator,
                 ..Default::default()
@@ -175,7 +218,11 @@ pub mod mine_duel {
 
         ctx.accounts.delegate_player_two_reveal(
             &ctx.accounts.payer,
-            &[SEED_REVEAL, room_key.as_ref(), room_state.player_two.as_ref()],
+            &[
+                SEED_REVEAL,
+                room_key.as_ref(),
+                room_state.player_two.as_ref(),
+            ],
             DelegateConfig {
                 validator: maybe_validator,
                 ..Default::default()
@@ -186,15 +233,23 @@ pub mod mine_duel {
     }
 
     pub fn request_winner_vrf(ctx: Context<RequestWinnerVrf>, client_seed: u8) -> Result<()> {
-        let room = &mut ctx.accounts.room;
-        let winner_state = &mut ctx.accounts.winner_state;
-
-        require!(room.status == RoomStatus::WaitingForVrf, MineDuelError::InvalidStatus);
-        require!(
-            room.player_one == ctx.accounts.payer.key() || room.player_two == ctx.accounts.payer.key(),
-            MineDuelError::Unauthorized
-        );
-        require!(!winner_state.vrf_requested, MineDuelError::AlreadyVrfRequested);
+        {
+            let room = &ctx.accounts.room;
+            let winner_state = &ctx.accounts.winner_state;
+            require!(
+                room.status == RoomStatus::WaitingForVrf,
+                MineDuelError::InvalidStatus
+            );
+            require!(
+                room.player_one == ctx.accounts.payer.key()
+                    || room.player_two == ctx.accounts.payer.key(),
+                MineDuelError::Unauthorized
+            );
+            require!(
+                !winner_state.vrf_requested,
+                MineDuelError::AlreadyVrfRequested
+            );
+        }
 
         let request_ix = create_request_randomness_ix(RequestRandomnessParams {
             payer: ctx.accounts.payer.key(),
@@ -204,12 +259,12 @@ pub mod mine_duel {
             caller_seed: [client_seed; 32],
             accounts_metas: Some(vec![
                 SerializableAccountMeta {
-                    pubkey: room.key(),
+                    pubkey: ctx.accounts.room.key(),
                     is_signer: false,
                     is_writable: true,
                 },
                 SerializableAccountMeta {
-                    pubkey: winner_state.key(),
+                    pubkey: ctx.accounts.winner_state.key(),
                     is_signer: false,
                     is_writable: true,
                 },
@@ -220,19 +275,19 @@ pub mod mine_duel {
         ctx.accounts
             .invoke_signed_vrf(&ctx.accounts.payer.to_account_info(), &request_ix)?;
 
-        winner_state.vrf_requested = true;
-        room.last_action_slot = Clock::get()?.slot;
+        ctx.accounts.winner_state.vrf_requested = true;
+        ctx.accounts.room.last_action_slot = Clock::get()?.slot;
         Ok(())
     }
 
-    pub fn consume_winner_vrf(
-        ctx: Context<ConsumeWinnerVrf>,
-        randomness: [u8; 32],
-    ) -> Result<()> {
+    pub fn consume_winner_vrf(ctx: Context<ConsumeWinnerVrf>, randomness: [u8; 32]) -> Result<()> {
         let room = &mut ctx.accounts.room;
         let winner_state = &mut ctx.accounts.winner_state;
 
-        require!(room.status == RoomStatus::WaitingForVrf, MineDuelError::InvalidStatus);
+        require!(
+            room.status == RoomStatus::WaitingForVrf,
+            MineDuelError::InvalidStatus
+        );
         require!(winner_state.vrf_requested, MineDuelError::VrfNotReady);
         require!(!winner_state.vrf_fulfilled, MineDuelError::InvalidStatus);
 
@@ -253,11 +308,19 @@ pub mod mine_duel {
         let room = &mut ctx.accounts.room;
         let winner_state = &mut ctx.accounts.winner_state;
 
-        require!(room.status == RoomStatus::Active, MineDuelError::InvalidStatus);
+        require!(
+            room.status == RoomStatus::Active,
+            MineDuelError::InvalidStatus
+        );
         require!(winner_state.vrf_fulfilled, MineDuelError::VrfNotReady);
 
-        let authority = resolve_action_authority(&ctx.accounts.session_token, &ctx.accounts.payer.key())?;
-        check_session_token(ctx.accounts.session_token.as_ref(), &ctx.accounts.payer.key(), &authority)?;
+        let authority =
+            resolve_action_authority(&ctx.accounts.session_token, &ctx.accounts.payer.key())?;
+        check_session_token(
+            ctx.accounts.session_token.as_ref(),
+            &ctx.accounts.payer.key(),
+            &authority,
+        )?;
 
         let is_player_one = if authority == room.player_one {
             true
@@ -268,7 +331,10 @@ pub mod mine_duel {
         };
 
         let idx = cell_index(x, y, z)?;
-        require!(!winner_state.bit_is_set(idx), MineDuelError::CellAlreadyMined);
+        require!(
+            !winner_state.bit_is_set(idx),
+            MineDuelError::CellAlreadyMined
+        );
         winner_state.set_bit(idx);
 
         if is_player_one {
@@ -277,7 +343,10 @@ pub mod mine_duel {
             reveal_from_mine(&mut ctx.accounts.player_two_reveal, x, y, z)?;
         }
 
-        room.mine_actions = room.mine_actions.checked_add(1).ok_or(MineDuelError::Overflow)?;
+        room.mine_actions = room
+            .mine_actions
+            .checked_add(1)
+            .ok_or(MineDuelError::Overflow)?;
         room.last_action_slot = Clock::get()?.slot;
 
         if winner_state.winner_cell == [x, y, z] {
@@ -288,15 +357,25 @@ pub mod mine_duel {
         Ok(())
     }
 
-    pub fn commit_checkpoint(ctx: Context<CommitCheckpoint>, checkpoint_hash: [u8; 32]) -> Result<()> {
+    pub fn commit_checkpoint(
+        ctx: Context<CommitCheckpoint>,
+        checkpoint_hash: [u8; 32],
+    ) -> Result<()> {
         let room = &mut ctx.accounts.room;
         require!(
-            room.player_one == ctx.accounts.payer.key() || room.player_two == ctx.accounts.payer.key(),
+            room.player_one == ctx.accounts.payer.key()
+                || room.player_two == ctx.accounts.payer.key(),
             MineDuelError::Unauthorized
         );
-        require!(room.status == RoomStatus::Active || room.status == RoomStatus::Won, MineDuelError::InvalidStatus);
+        require!(
+            room.status == RoomStatus::Active || room.status == RoomStatus::Won,
+            MineDuelError::InvalidStatus
+        );
 
-        room.checkpoint_seq = room.checkpoint_seq.checked_add(1).ok_or(MineDuelError::Overflow)?;
+        room.checkpoint_seq = room
+            .checkpoint_seq
+            .checked_add(1)
+            .ok_or(MineDuelError::Overflow)?;
         room.checkpoint_hash = checkpoint_hash;
         room.last_action_slot = Clock::get()?.slot;
 
@@ -316,7 +395,11 @@ pub mod mine_duel {
         let winner_info = ctx.accounts.winner.to_account_info();
 
         require!(room.status == RoomStatus::Won, MineDuelError::InvalidStatus);
-        require_keys_eq!(room.winner, ctx.accounts.winner.key(), MineDuelError::Unauthorized);
+        require_keys_eq!(
+            room.winner,
+            ctx.accounts.winner.key(),
+            MineDuelError::Unauthorized
+        );
         require!(room.total_escrow_lamports > 0, MineDuelError::InvalidStatus);
 
         let payout = room.total_escrow_lamports;
@@ -748,7 +831,11 @@ fn check_session_token(
     authority: &Pubkey,
 ) -> Result<()> {
     if let Some(token) = session_token {
-        require_keys_eq!(token.authority, *authority, MineDuelError::InvalidSessionToken);
+        require_keys_eq!(
+            token.authority,
+            *authority,
+            MineDuelError::InvalidSessionToken
+        );
 
         let expected_seeds = &[
             SessionToken::SEED_PREFIX.as_bytes(),
@@ -757,7 +844,11 @@ fn check_session_token(
             authority.as_ref(),
         ];
         let (expected_pda, _) = Pubkey::find_program_address(expected_seeds, &session_keys::id());
-        require_keys_eq!(expected_pda, token.key(), MineDuelError::InvalidSessionToken);
+        require_keys_eq!(
+            expected_pda,
+            token.key(),
+            MineDuelError::InvalidSessionToken
+        );
 
         let now = Clock::get()?.unix_timestamp;
         require!(now < token.valid_until, MineDuelError::InvalidSessionToken);
@@ -804,7 +895,8 @@ fn cell_index_i16(x: i16, y: i16, z: i16) -> Result<usize> {
     {
         return err!(MineDuelError::InvalidCoordinate);
     }
-    let idx = ((y as usize) * (MAP_DEPTH as usize) + (z as usize)) * (MAP_WIDTH as usize) + (x as usize);
+    let idx =
+        ((y as usize) * (MAP_DEPTH as usize) + (z as usize)) * (MAP_WIDTH as usize) + (x as usize);
     Ok(idx)
 }
 

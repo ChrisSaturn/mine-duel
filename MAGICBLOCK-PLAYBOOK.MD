@@ -342,3 +342,60 @@ Official references reviewed:
 - https://docs.magicblock.gg/pages/private-ephemeral-rollups-pers/introduction/onchain-privacy
 - https://docs.magicblock.gg/pages/private-ephemeral-rollups-pers/introduction/authorization
 - https://docs.magicblock.gg/pages/private-ephemeral-rollups-pers/introduction/compliance-framework
+
+## 8) Mine Duel Architecture + Tx Routing
+
+This workspace now includes a v1 on-chain Mine Duel program at:
+
+- [`smart-contract/programs/mine-duel/src/lib.rs`](./smart-contract/programs/mine-duel/src/lib.rs)
+
+Related architecture docs:
+
+- [`smart-contract/ARCHITECTURE.MD`](./smart-contract/ARCHITECTURE.MD)
+- [`smart-contract/ONCHAIN-VERIFICATION.MD`](./smart-contract/ONCHAIN-VERIFICATION.MD)
+
+### 8.1 Locked gameplay constraints
+
+- Fixed mine volume is compile-time constant (`16x16x8`), not an instruction parameter.
+- `Y=1` layer is globally exposed to both players.
+- Gameplay action is coordinate mining (`mine(x,y,z)`), no movement state in v1.
+- Fog-of-war reveal is caller-only and reveals mined cell + six axis neighbors.
+
+### 8.2 State split used by Mine Duel
+
+- Shared/public: `RoomShared`
+  - players, status, escrow totals, checkpoint hash/seq, mine count.
+- Private: `WinnerState`
+  - VRF lifecycle, winner cell, randomness snapshot, global mined-cell bitset.
+- Private (per-player): `PlayerReveal`
+  - per-player reveal masks for fog-of-war.
+
+### 8.3 Instruction map (implemented)
+
+- `create_room`
+- `cancel_room_prejoin`
+- `join_room`
+- `delegate_private_state`
+- `request_winner_vrf`
+- `consume_winner_vrf`
+- `mine`
+- `commit_checkpoint`
+- `finalize_win`
+
+### 8.4 Routing policy for Mine Duel
+
+| Action | Route |
+| --- | --- |
+| `create_room` / `cancel_room_prejoin` / `join_room` | Base layer RPC |
+| `delegate_private_state` | Base layer RPC |
+| `request_winner_vrf` / `consume_winner_vrf` | Private ER / TEE endpoint |
+| `mine` / `commit_checkpoint` / `finalize_win` | Private ER / TEE endpoint |
+
+### 8.5 Session + privacy policy
+
+- `mine` accepts optional `SessionToken` and validates:
+  - authority binding,
+  - token PDA derivation,
+  - token expiry.
+- Without a token, signer must be the authority.
+- Winner location is only set after VRF callback and is kept in private delegated state.
