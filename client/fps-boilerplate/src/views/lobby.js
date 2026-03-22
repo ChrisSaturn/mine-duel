@@ -213,9 +213,15 @@ function setupLobbyClickEffects({ screenEl, buttons }) {
 // ── Mount / unmount ─────────────────────────────────────────────────────────
 
 /**
- * @param {{ walletGateway: object, onEnterGame: (selectedModelPath: string) => void, initialSelectedModelPath?: string }} opts
+ * @param {{
+ *  walletGateway: object,
+ *  onCreateRoom?: (payload: { stakeSol: number, selectedModelPath: string }) => Promise<{ roomCode: string } | void>,
+ *  onEnterGame: (payload: { selectedModelPath: string, roomCode: string }) => Promise<void> | void,
+ *  initialSelectedModelPath?: string,
+ *  initialRoomCode?: string
+ * }} opts
  */
-export function mountLobby({ walletGateway, onEnterGame, initialSelectedModelPath }) {
+export function mountLobby({ walletGateway, onCreateRoom, onEnterGame, initialSelectedModelPath, initialRoomCode }) {
   const root = document.getElementById('lobby');
   if (!root) return;
   _disposeLobbyClickEffects?.();
@@ -326,6 +332,21 @@ export function mountLobby({ walletGateway, onEnterGame, initialSelectedModelPat
         <div class="lobby-action-stack">
           <p class="lobby-status" id="lobby-status" aria-live="polite"></p>
 
+          <label class="lobby-room-field" for="lobby-room-code">
+            <span class="lobby-room-label">Room Code</span>
+            <input
+              class="lobby-room-input lobby-room-input--room-code"
+              id="lobby-room-code"
+              name="roomCode"
+              type="text"
+              autocomplete="off"
+              spellcheck="false"
+              autocapitalize="off"
+              placeholder="Creator wallet address"
+            />
+          </label>
+          <p class="lobby-room-hint">Room code is the creator wallet address (one room per creator).</p>
+
           <button
             class="lobby-action-btn lobby-action-btn--secondary"
             id="lobby-create-room-btn"
@@ -435,11 +456,13 @@ export function mountLobby({ walletGateway, onEnterGame, initialSelectedModelPat
   const createRoomConfirmBtn = /** @type {HTMLButtonElement | null} */ (root.querySelector('#lobby-create-room-confirm-btn'));
   const createRoomFormEl = /** @type {HTMLFormElement | null} */ (root.querySelector('#lobby-create-room-form'));
   const createRoomStakeInputEl = /** @type {HTMLInputElement | null} */ (root.querySelector('#lobby-room-stake'));
+  const roomCodeInputEl = /** @type {HTMLInputElement | null} */ (root.querySelector('#lobby-room-code'));
   /** @type {{ connected: boolean } | null} */
   let lastWalletState = null;
   let solBalanceRequestId = 0;
   let walletMenuOpen = false;
   let createRoomOverlayOpen = false;
+  let actionInFlight = false;
 
   /**
    * @param {boolean} open
@@ -469,6 +492,34 @@ export function mountLobby({ walletGateway, onEnterGame, initialSelectedModelPat
     if (shouldOpen) {
       setWalletMenuOpen(false);
       createRoomStakeInputEl?.focus();
+    }
+  }
+
+  /**
+   * @param {string} message
+   * @param {boolean} [error]
+   */
+  function setStatus(message, error = false) {
+    if (!statusEl) return;
+    statusEl.textContent = message || '';
+    statusEl.classList.toggle('lobby-status--error', Boolean(error));
+  }
+
+  function getSelectedSkinModelPath() {
+    return CHARACTER_SKINS[selectedSkinIndex]?.modelPath || CHARACTER_SKINS[0].modelPath;
+  }
+
+  function syncEnterButtonState() {
+    const roomCode = roomCodeInputEl?.value?.trim() || '';
+    const connected = Boolean(lastWalletState?.connected);
+    if (enterBtn) {
+      enterBtn.disabled = actionInFlight || !connected || roomCode.length === 0;
+    }
+    if (createRoomBtn) {
+      createRoomBtn.disabled = actionInFlight || !connected;
+    }
+    if (createRoomConfirmBtn) {
+      createRoomConfirmBtn.disabled = actionInFlight || !connected;
     }
   }
 
@@ -525,6 +576,12 @@ export function mountLobby({ walletGateway, onEnterGame, initialSelectedModelPat
   }
 
   setSkinIndex(selectedSkinIndex);
+  if (roomCodeInputEl) {
+    roomCodeInputEl.value = typeof initialRoomCode === 'string' ? initialRoomCode.trim() : '';
+    roomCodeInputEl.addEventListener('input', () => {
+      syncEnterButtonState();
+    });
+  }
 
   _disposeLobbyClickEffects = setupLobbyClickEffects({
     screenEl: lobbyScreenEl,
@@ -546,6 +603,7 @@ export function mountLobby({ walletGateway, onEnterGame, initialSelectedModelPat
       setWalletMenuOpen(false);
     }
     _renderWalletState(state, { connectBtn, disconnectBtn, enterBtn, statusEl, addressEl });
+    syncEnterButtonState();
     if (state.connected) {
       void refreshSolBalance();
       return;
@@ -585,20 +643,66 @@ export function mountLobby({ walletGateway, onEnterGame, initialSelectedModelPat
   });
 
   createRoomBtn.addEventListener('click', () => {
+    if (actionInFlight) return;
+    if (!lastWalletState?.connected) {
+      connectBtn.click();
+      return;
+    }
     setCreateRoomOverlayOpen(true);
   });
   createRoomBackdropBtn?.addEventListener('click', () => {
+    if (actionInFlight) return;
     setCreateRoomOverlayOpen(false);
   });
   createRoomCloseBtn?.addEventListener('click', () => {
+    if (actionInFlight) return;
     setCreateRoomOverlayOpen(false);
   });
   createRoomCancelBtn?.addEventListener('click', () => {
+    if (actionInFlight) return;
     setCreateRoomOverlayOpen(false);
   });
-  createRoomFormEl?.addEventListener('submit', (event) => {
+  createRoomFormEl?.addEventListener('submit', async (event) => {
     event.preventDefault();
-    setCreateRoomOverlayOpen(false);
+    if (actionInFlight) return;
+    if (!lastWalletState?.connected) {
+      setStatus('Connect wallet before creating a room.', true);
+      return;
+    }
+
+    const stakeSol = Number(createRoomStakeInputEl?.value || 0);
+    if (!Number.isFinite(stakeSol) || stakeSol <= 0) {
+      setStatus('Stake must be greater than zero.', true);
+      return;
+    }
+
+    const selectedSkinModelPath = getSelectedSkinModelPath();
+    actionInFlight = true;
+    syncEnterButtonState();
+    try {
+      const created = typeof onCreateRoom === 'function'
+        ? await onCreateRoom({ stakeSol, selectedModelPath: selectedSkinModelPath })
+        : null;
+      const roomCode = typeof created?.roomCode === 'string' && created.roomCode.trim()
+        ? created.roomCode.trim()
+        : (lastWalletState?.publicKey || '');
+      if (!roomCode) {
+        throw new Error('Room creation returned no room code.');
+      }
+      if (roomCodeInputEl) {
+        roomCodeInputEl.value = roomCode;
+      }
+      setCreateRoomOverlayOpen(false);
+      setStatus(`Room created: ${roomCode.slice(0, 4)}...${roomCode.slice(-4)}`, false);
+      await onEnterGame({ selectedModelPath: selectedSkinModelPath, roomCode });
+      unmountLobby();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setStatus(message, true);
+    } finally {
+      actionInFlight = false;
+      syncEnterButtonState();
+    }
   });
 
   const onWindowClick = (event) => {
@@ -610,6 +714,7 @@ export function mountLobby({ walletGateway, onEnterGame, initialSelectedModelPat
   };
   const onWindowKeyDown = (event) => {
     if (event.key === 'Escape') {
+      if (actionInFlight) return;
       if (createRoomOverlayOpen) {
         setCreateRoomOverlayOpen(false);
         return;
@@ -627,15 +732,34 @@ export function mountLobby({ walletGateway, onEnterGame, initialSelectedModelPat
   };
 
   // ── Enter game ────────────────────────────────────────────────────────────
-  enterBtn.addEventListener('click', () => {
+  enterBtn.addEventListener('click', async () => {
     if (enterBtn.disabled) return;
     if (!lastWalletState?.connected) {
       connectBtn.click();
       return;
     }
-    const selectedSkin = CHARACTER_SKINS[selectedSkinIndex];
-    unmountLobby();
-    onEnterGame(selectedSkin.modelPath);
+    const roomCode = roomCodeInputEl?.value?.trim() || '';
+    if (!roomCode) {
+      setStatus('Enter a room code to continue.', true);
+      syncEnterButtonState();
+      return;
+    }
+    const selectedSkinModelPath = getSelectedSkinModelPath();
+    actionInFlight = true;
+    syncEnterButtonState();
+    try {
+      await onEnterGame({
+        selectedModelPath: selectedSkinModelPath,
+        roomCode
+      });
+      unmountLobby();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setStatus(message, true);
+    } finally {
+      actionInFlight = false;
+      syncEnterButtonState();
+    }
   });
 
   root.removeAttribute('hidden');

@@ -5,7 +5,8 @@ import {
   applyMapData as applyMapManifestData,
   getMineZoneAabbs,
   loadMapManifest,
-  normalizeMapData
+  normalizeMapData,
+  worldPositionToGameplayCell
 } from './runtime/mapRuntime.js';
 import { createAtmosphereRuntime } from './runtime/atmosphereRuntime.js';
 import {
@@ -15,8 +16,8 @@ import {
 } from './runtime/blockworldStyleRuntime.js';
 import { createFirstPersonControllerRuntime } from './runtime/firstPersonControllerRuntime.js';
 import { createPostProcessRuntime } from './runtime/postProcessRuntime.js';
-import { createStreamRuntime } from './runtime/streamRuntime.js';
 import { createVoxelRuntime } from './runtime/voxelRuntime.js';
+import { createRoomRuntime } from './runtime/gameplay/roomRuntime.js';
 
 function withBaseUrl(path) {
   const baseUrl = typeof import.meta?.env?.BASE_URL === 'string'
@@ -54,30 +55,20 @@ const matchResultTitle = document.getElementById('match-result-title');
 const matchResultSubtitle = document.getElementById('match-result-subtitle');
 const matchResultCountdownValueEl = document.getElementById('match-result-countdown-value');
 const matchResultCaption = document.getElementById('match-result-caption');
+const roomWaitOverlay = document.getElementById('room-wait-overlay');
+const roomWaitStateLabel = document.getElementById('room-wait-state');
+const roomWaitCode = document.getElementById('room-wait-code');
+const roomWaitMeta = document.getElementById('room-wait-meta');
+const roomWaitCancelButton = document.getElementById('room-wait-cancel');
 
 // ---------------------------------------------
 // Runtime config (single source of truth)
 // ---------------------------------------------
-const perRuntimeEnabledByEnv =
-  String(import.meta.env.VITE_ENABLE_MANAGED_PER || '').trim() === '1'
-  || String(import.meta.env.VITE_ENABLE_WORLD_STREAM_GATEWAY || '').trim() === '1';
-const perRuntimeUrlOverride = String(
-  import.meta.env.VITE_PER_RUNTIME_URL
-  || import.meta.env.VITE_WORLD_STREAM_GATEWAY_URL
-  || '',
-).trim();
-const streamRuntimeEnabled = perRuntimeEnabledByEnv || perRuntimeUrlOverride.length > 0;
-const resolvedRuntimeBaseUrl = perRuntimeUrlOverride;
-
 const CONFIG = {
   mapManifestPath: DEFAULT_MAP_MANIFEST_PATH,
-  streamRuntimeEnabled,
-  runtimeBaseUrl: resolvedRuntimeBaseUrl,
-  worldProfileId: String(
-    import.meta.env.VITE_WORLD_PROFILE_ID
-    || '82584d6e51c64b90caafbfc1e59b95fade51ba8e1ed606604064d2366bd88f11',
-  ),
-  mineDuelProgramId: String(import.meta.env.VITE_MINE_DUEL_PROGRAM_ID || 'HFmWxe7HufHuygGS5j9ZRKdHwZtXdWWz6iDccH6x4VBq'),
+  mineDuelProgramId: String(import.meta.env.VITE_MINE_DUEL_PROGRAM_ID || '4b2q3K4cgr1P8FkjbcQ8nssDxLb9dhdVgVtrknvn5igJ'),
+  erRpcUrl: String(import.meta.env.VITE_ER_RPC_URL || 'https://devnet.magicblock.app/').trim(),
+  erWsUrl: String(import.meta.env.VITE_ER_WS_URL || '').trim(),
   playerHeight: 1.62,
   walkSpeed: 5,
   sprintSpeed: 7,
@@ -149,6 +140,7 @@ const MINE_SWAY_Y_FREQ_BASE = 8;
 const MINE_SWAY_Y_FREQ_MOVEMENT = 6;
 const MINE_SWING_JITTER_FREQ = 92;
 const MINE_SWING_JITTER_AMOUNT = 0.0024;
+const ROOM_CONTEXT_STORAGE_KEY = 'mine-duel.active-room-context.v1';
 let selectedPlayerModelPath = DEFAULT_PLAYER_MODEL_PATH;
 
 // ---------------------------------------------
@@ -196,7 +188,6 @@ const inputState = {
   shiftPressed: false
 };
 
-const cameraDirection = new THREE.Vector3();
 const mineHoverRaycaster = new THREE.Raycaster();
 mineHoverRaycaster.near = 0;
 mineHoverRaycaster.far = 7.5;
@@ -210,6 +201,9 @@ const mineBreakHitPosition = new THREE.Vector3();
 const mineBreakHitNormal = new THREE.Vector3();
 const mineBreakHitScale = new THREE.Vector3();
 const mineBreakHitQuaternion = new THREE.Quaternion();
+const gameplayCellWorldPosition = new THREE.Vector3();
+const gameplayCellWorldNormal = new THREE.Vector3();
+const gameplayCellWorldScale = new THREE.Vector3();
 const mineBreakDebrisVelocity = new THREE.Vector3();
 const mineBreakParticleGeometry = new THREE.BoxGeometry(1, 1, 1);
 const mineBreakHiddenInstancePosition = new THREE.Vector3();
@@ -302,13 +296,15 @@ let walletGateway = null;
 let walletStateUnsubscribe = null;
 let walletActionInFlight = false;
 let voxelRuntime = null;
-let streamRuntime = null;
+let roomRuntime = null;
+let roomSubscriptionDispose = null;
 let mineZones = [];
 const mineHoverTargets = [];
+const mineCellVisualEntries = [];
+const mineCellVisualByIndex = new Map();
+const optimisticMinedCellIndexes = new Set();
 const mineBreakParticles = [];
 let lastMineAtMs = 0;
-let streamRunning = false;
-let streamResyncInFlight = false;
 let atmosphereRuntime = null;
 let postProcessRuntime = null;
 const notificationQueue = [];
@@ -319,6 +315,15 @@ let matchResultCountdownTimer = 0;
 let matchResultCountdown = 0;
 let matchResultRedirectTimer = 0;
 let gameRouter = null;
+let activeRoomCode = '';
+let latestRoomSharedState = null;
+let latestWinnerState = null;
+let latestPlayerRevealState = null;
+let roomLifecycleState = 'Lobby';
+let roomLifecycleActionInFlight = false;
+let sessionEnsureInFlight = false;
+let roomCancelInFlight = false;
+let eventsBound = false;
 let previousWalletConnected = null;
 let previousWalletError = '';
 const firstPersonController = createFirstPersonControllerRuntime({
@@ -391,6 +396,48 @@ function getMineCenterRaycastHit(cameraRef, maxDistance = MINE_BREAK_MAX_DISTANC
     return hit;
   }
   return null;
+}
+
+function resolveGameplayCellFromHit(hit) {
+  if (!hit?.object) {
+    return null;
+  }
+
+  if (hit.object.isInstancedMesh && Number.isInteger(hit.instanceId)) {
+    const cellCoords = hit.object.userData?.minePatchCellCoords;
+    if (Array.isArray(cellCoords) && cellCoords[hit.instanceId]) {
+      const coord = cellCoords[hit.instanceId];
+      return {
+        x: Number(coord[0]) || 0,
+        y: Number(coord[1]) || 0,
+        z: Number(coord[2]) || 0,
+        inBounds: true
+      };
+    }
+  }
+
+  const gameplayGrid = getActiveGameplayGrid();
+  if (!gameplayGrid) {
+    return null;
+  }
+
+  resolveMineHitPose(hit, gameplayCellWorldPosition, gameplayCellWorldNormal, gameplayCellWorldScale);
+  const projected = worldPositionToGameplayCell({
+    x: gameplayCellWorldPosition.x,
+    y: gameplayCellWorldPosition.y,
+    z: gameplayCellWorldPosition.z
+  }, gameplayGrid);
+
+  if (!projected.inBounds) {
+    return null;
+  }
+
+  return {
+    x: projected.x,
+    y: projected.y,
+    z: projected.z,
+    inBounds: true
+  };
 }
 
 function resolveHitMaterial(hit) {
@@ -657,6 +704,161 @@ function sanitizeBopperMeta(value) {
     return text;
   }
   return `${text.slice(0, 61)}...`;
+}
+
+function loadStoredRoomContext() {
+  try {
+    const raw = sessionStorage.getItem(ROOM_CONTEXT_STORAGE_KEY);
+    if (!raw) {
+      return null;
+    }
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') {
+      return null;
+    }
+    const roomCode = typeof parsed.roomCode === 'string' ? parsed.roomCode.trim() : '';
+    if (!roomCode) {
+      return null;
+    }
+    const selectedModelPath = typeof parsed.selectedModelPath === 'string'
+      ? parsed.selectedModelPath.trim()
+      : '';
+    return {
+      roomCode,
+      selectedModelPath: selectedModelPath || DEFAULT_PLAYER_MODEL_PATH
+    };
+  } catch {
+    return null;
+  }
+}
+
+function saveRoomContext(context) {
+  if (!context?.roomCode) {
+    return;
+  }
+  const payload = {
+    roomCode: context.roomCode,
+    selectedModelPath: context.selectedModelPath || DEFAULT_PLAYER_MODEL_PATH
+  };
+  try {
+    sessionStorage.setItem(ROOM_CONTEXT_STORAGE_KEY, JSON.stringify(payload));
+  } catch {
+    // Session storage is best-effort.
+  }
+}
+
+function clearStoredRoomContext() {
+  try {
+    sessionStorage.removeItem(ROOM_CONTEXT_STORAGE_KEY);
+  } catch {
+    // No-op.
+  }
+}
+
+function getActiveGameplayGrid() {
+  return activeMapData?.gameplayGrid || null;
+}
+
+function setMineVisualEntryVisible(entry, visible) {
+  if (!entry || entry.visible === visible) {
+    return false;
+  }
+
+  if (visible) {
+    entry.mesh.setMatrixAt(entry.instanceId, entry.originalMatrix);
+    entry.visible = true;
+    return true;
+  }
+
+  mineBreakLastInstanceMatrix.copy(entry.originalMatrix);
+  mineBreakLastInstanceMatrix.decompose(
+    mineBreakHiddenInstancePosition,
+    mineBreakHiddenInstanceQuaternion,
+    mineBreakHiddenInstanceScale
+  );
+  mineBreakHiddenInstancePosition.y -= 4096;
+  mineBreakLastInstanceMatrix.compose(
+    mineBreakHiddenInstancePosition,
+    mineBreakHiddenInstanceQuaternion,
+    mineBreakHiddenInstanceScale
+  );
+  entry.mesh.setMatrixAt(entry.instanceId, mineBreakLastInstanceMatrix);
+  entry.visible = false;
+  return true;
+}
+
+function rebuildMineCellVisualIndex() {
+  mineCellVisualEntries.length = 0;
+  mineCellVisualByIndex.clear();
+
+  for (const target of mineHoverTargets) {
+    if (!target?.isInstancedMesh) {
+      continue;
+    }
+    const cellIndices = target.userData?.minePatchCellIndices;
+    if (!Array.isArray(cellIndices) || cellIndices.length === 0) {
+      continue;
+    }
+    const count = Math.min(target.count, cellIndices.length);
+    for (let index = 0; index < count; index += 1) {
+      const cellIndex = Number(cellIndices[index]);
+      if (!Number.isInteger(cellIndex) || cellIndex < 0) {
+        continue;
+      }
+      const originalMatrix = new THREE.Matrix4();
+      target.getMatrixAt(index, originalMatrix);
+      const entry = {
+        mesh: target,
+        instanceId: index,
+        cellIndex,
+        originalMatrix,
+        visible: true
+      };
+      mineCellVisualEntries.push(entry);
+      if (!mineCellVisualByIndex.has(cellIndex)) {
+        mineCellVisualByIndex.set(cellIndex, []);
+      }
+      mineCellVisualByIndex.get(cellIndex).push(entry);
+    }
+  }
+}
+
+function applyMineMaskToVisuals() {
+  if (!roomRuntime || mineCellVisualEntries.length === 0) {
+    return;
+  }
+  const changedMeshes = new Set();
+  const minedMask = latestWinnerState?.minedMask || null;
+  const revealedMask = latestPlayerRevealState?.revealedMask || null;
+
+  for (const entry of mineCellVisualEntries) {
+    const idx = entry.cellIndex;
+    const mined = minedMask ? roomRuntime.maskBitSet(minedMask, idx) : false;
+    const revealed = revealedMask ? roomRuntime.maskBitSet(revealedMask, idx) : true;
+    const optimisticMined = optimisticMinedCellIndexes.has(idx);
+    const shouldBeVisible = revealed && !mined && !optimisticMined;
+    if (setMineVisualEntryVisible(entry, shouldBeVisible)) {
+      changedMeshes.add(entry.mesh);
+    }
+  }
+
+  for (const mesh of changedMeshes) {
+    mesh.instanceMatrix.needsUpdate = true;
+    mesh.computeBoundingBox?.();
+    mesh.computeBoundingSphere?.();
+  }
+}
+
+function markOptimisticMineCell(cellIndex, enabled) {
+  if (!Number.isInteger(cellIndex) || cellIndex < 0) {
+    return;
+  }
+  if (enabled) {
+    optimisticMinedCellIndexes.add(cellIndex);
+  } else {
+    optimisticMinedCellIndexes.delete(cellIndex);
+  }
+  applyMineMaskToVisuals();
 }
 
 function clearNotificationTimers() {
@@ -1640,6 +1842,8 @@ async function initializeFirstPersonPickaxeViewModel() {
 
 function refreshMineHoverTargets() {
   mineHoverTargets.length = 0;
+  mineCellVisualEntries.length = 0;
+  mineCellVisualByIndex.clear();
   if (!activeRuntimeState?.worldRoot) {
     return;
   }
@@ -1655,6 +1859,9 @@ function refreshMineHoverTargets() {
     }
     mineHoverTargets.push(node);
   });
+
+  rebuildMineCellVisualIndex();
+  applyMineMaskToVisuals();
 }
 
 async function applyMap(nextMapData) {
@@ -1726,11 +1933,9 @@ async function initializeWorld() {
 
   await initializeRuntimePlayerModel();
   await initializeFirstPersonPickaxeViewModel();
-  createOrUpdateStreamRuntime();
+  createOrUpdateRoomRuntime();
   if (walletGateway?.getState?.().connected) {
-    await startStreamRuntimeIfReady();
-  } else if (!CONFIG.streamRuntimeEnabled) {
-    renderStreamStatus('Disabled (on-chain only mode)');
+    subscribeToActiveRoom();
   } else {
     renderStreamStatus('Disconnected');
   }
@@ -1949,9 +2154,10 @@ async function initializeWalletConnector() {
     walletStateUnsubscribe = walletGateway.onChange((walletState) => {
       renderWalletState(walletState);
       if (walletState.connected) {
-        void startStreamRuntimeIfReady();
+        createOrUpdateRoomRuntime();
+        subscribeToActiveRoom();
       } else {
-        stopStreamRuntime();
+        stopRoomSubscriptions();
       }
     });
 
@@ -2025,7 +2231,7 @@ async function initializeWalletConnector() {
 }
 
 function teardownWalletConnector() {
-  stopStreamRuntime();
+  stopRoomSubscriptions();
   resetNotificationBopper();
   if (walletStateUnsubscribe) {
     walletStateUnsubscribe();
@@ -2046,162 +2252,341 @@ function renderStreamStatus(text) {
   }
 }
 
-function getPlayerPose() {
-  camera.getWorldDirection(cameraDirection);
-  const velocity = firstPersonController.getVelocity();
-  return {
-    position: {
-      x: playerRig.position.x,
-      y: playerRig.position.y,
-      z: playerRig.position.z
-    },
-    velocity: {
-      x: velocity.x,
-      y: velocity.y,
-      z: velocity.z
-    },
-    viewDir: {
-      x: cameraDirection.x,
-      y: cameraDirection.y,
-      z: cameraDirection.z
-    }
-  };
+function deriveRoomLifecycleStatusText() {
+  if (!activeRoomCode) {
+    return 'No room selected';
+  }
+  const shortCode = compactPublicKey(activeRoomCode);
+  return `${roomLifecycleState} (${shortCode})`;
 }
 
-function handleStreamEvent(message) {
-  if (!message?.event || !voxelRuntime) {
-    return;
-  }
-
-  if (tryShowMatchResultFromStreamEvent(message.event, message.payload)) {
-    return;
-  }
-
-  switch (message.event) {
-    case 'world_snapshot':
-      voxelRuntime.applyWorldSnapshot(message.payload);
-      voxelRuntime.setMineZones(mineZones);
-      if (Number.isFinite(message.payload?.intent_seq)) {
-        streamRuntime?.setIntentSeq(Number(message.payload.intent_seq));
-      }
-      break;
-
-    case 'reveal_ahead_bundle':
-      voxelRuntime.applyRevealBundle(message.payload);
-      break;
-
-    case 'commit_result':
-      renderStreamStatus(`Live (batch ${message.payload?.batch_seq || 0})`);
-      if (Number.isFinite(message.payload?.intent_seq)) {
-        streamRuntime?.setIntentSeq(Number(message.payload.intent_seq));
-      }
-      break;
-
-    case 'rollback_patch':
-      renderStreamStatus(`Rollback: ${message.payload?.reason || 'unspecified'}`);
-      queueNotificationBopper('Stream rollback patch.', {
-        tone: 'warning',
-        meta: String(message.payload?.reason || 'resyncing runtime'),
-        ttlMs: 3600
-      });
-      if (Number.isFinite(message.payload?.expected_intent_seq)) {
-        streamRuntime?.setIntentSeq(Math.max(0, Number(message.payload.expected_intent_seq) - 1));
-      }
-      void forceResyncStreamRuntime();
-      break;
-
-    case 'desynced':
-      renderStreamStatus(`Desynced: ${message.payload?.reason || 'unknown'}`);
-      queueNotificationBopper('Stream desynced.', {
-        tone: 'warning',
-        meta: String(message.payload?.reason || 'resyncing runtime'),
-        ttlMs: 3600
-      });
-      void forceResyncStreamRuntime();
-      break;
-
-    default:
-      break;
-  }
+function isGameplayLifecycleActive() {
+  return roomLifecycleState === 'Active';
 }
 
-function createOrUpdateStreamRuntime() {
-  if (!walletGateway || !voxelRuntime) {
-    return;
-  }
-
-  if (!CONFIG.streamRuntimeEnabled) {
-    if (streamRuntime) {
-      streamRuntime.stop();
-      streamRuntime = null;
-    }
-    renderStreamStatus('Disabled (on-chain only mode)');
-    return;
-  }
-
-  if (streamRuntime) {
-    streamRuntime.stop();
-  }
-
-  streamRuntime = createStreamRuntime({
-    walletGateway,
-    worldProfileId: CONFIG.worldProfileId,
-    runtimeBaseUrl: CONFIG.runtimeBaseUrl,
-    programId: CONFIG.mineDuelProgramId,
-    getPlayerPose,
-    getMineZones: () => mineZones,
-    onEvent: handleStreamEvent,
-    onStatus: (status) => {
-      const detail = status?.detail ? ` (${status.detail})` : '';
-      renderStreamStatus(`${status?.status || 'unknown'}${detail}`);
-    }
-  });
+function isRoomWaitLifecycleState(state) {
+  return state === 'Lobby' || state === 'WaitingForOpponent' || state === 'WaitingForVrf';
 }
 
-async function startStreamRuntimeIfReady() {
-  if (!streamRuntime || streamRunning) {
+function setRoomWaitOverlayVisible(visible) {
+  if (!roomWaitOverlay) {
+    return;
+  }
+  roomWaitOverlay.classList.toggle('is-visible', visible);
+  roomWaitOverlay.hidden = !visible;
+  roomWaitOverlay.setAttribute('aria-hidden', visible ? 'false' : 'true');
+}
+
+function syncRoomWaitOverlay() {
+  if (!roomWaitOverlay) {
     return;
   }
 
-  try {
-    await streamRuntime.start();
-    streamRunning = true;
-    queueNotificationBopper('Managed runtime live.', {
-      tone: 'info',
-      meta: 'Realtime sync online'
+  const shouldShow = isGameRouteActive()
+    && Boolean(activeRoomCode)
+    && isRoomWaitLifecycleState(roomLifecycleState);
+  if (!shouldShow) {
+    setRoomWaitOverlayVisible(false);
+    return;
+  }
+
+  const walletPubkey = walletGateway?.getState?.().publicKey || '';
+  const roomCreator = latestRoomSharedState?.creatorBase58 || activeRoomCode;
+  const isCreator = walletPubkey && roomCreator && walletPubkey === roomCreator;
+  const canCancel = roomLifecycleState === 'WaitingForOpponent' && isCreator;
+
+  if (roomLifecycleState === 'WaitingForOpponent') {
+    if (roomWaitStateLabel) {
+      roomWaitStateLabel.textContent = 'WAITING FOR PLAYER';
+    }
+    if (roomWaitMeta) {
+      roomWaitMeta.textContent = 'Share this room code with your opponent to begin.';
+    }
+  } else if (roomLifecycleState === 'WaitingForVrf') {
+    if (roomWaitStateLabel) {
+      roomWaitStateLabel.textContent = 'WAITING FOR VRF';
+    }
+    if (roomWaitMeta) {
+      roomWaitMeta.textContent = 'Opponent joined. Finalizing winner cell and match activation.';
+    }
+  } else {
+    if (roomWaitStateLabel) {
+      roomWaitStateLabel.textContent = 'SYNCING ROOM';
+    }
+    if (roomWaitMeta) {
+      roomWaitMeta.textContent = 'Loading current on-chain room state...';
+    }
+  }
+
+  if (roomWaitCode) {
+    roomWaitCode.textContent = activeRoomCode;
+  }
+
+  if (roomWaitCancelButton) {
+    roomWaitCancelButton.hidden = !canCancel;
+    roomWaitCancelButton.disabled = roomCancelInFlight;
+    roomWaitCancelButton.textContent = roomCancelInFlight ? 'Cancelling...' : 'Cancel Room';
+  }
+
+  setRoomWaitOverlayVisible(true);
+}
+
+async function onRoomWaitCancelClick() {
+  if (roomCancelInFlight || !roomRuntime || !activeRoomCode) {
+    return;
+  }
+
+  if (roomLifecycleState !== 'WaitingForOpponent') {
+    return;
+  }
+
+  const walletPubkey = walletGateway?.getState?.().publicKey || '';
+  const roomCreator = latestRoomSharedState?.creatorBase58 || activeRoomCode;
+  if (!walletPubkey || walletPubkey !== roomCreator) {
+    queueNotificationBopper('Only the creator can cancel this room.', {
+      tone: 'warning'
     });
+    return;
+  }
+
+  roomCancelInFlight = true;
+  syncRoomWaitOverlay();
+  try {
+    await roomRuntime.cancelRoomPrejoin(activeRoomCode);
+    if (isPointerLocked() && document.exitPointerLock) {
+      document.exitPointerLock();
+    }
+    queueNotificationBopper('Room cancelled.', {
+      tone: 'success',
+      meta: 'Returned to lobby'
+    });
+    activeRoomCode = '';
+    clearStoredRoomContext();
+    stopRoomSubscriptions();
+    navigateToLobby();
   } catch (error) {
-    streamRunning = false;
-    const reason = asErrorText(error);
-    renderStreamStatus(`Error: ${reason}`);
-    queueNotificationBopper('Managed runtime failed.', {
+    queueNotificationBopper('Cancel room failed.', {
       tone: 'danger',
-      meta: reason,
+      meta: asErrorText(error),
       ttlMs: 4200
     });
+  } finally {
+    roomCancelInFlight = false;
+    syncRoomWaitOverlay();
+    onPointerLockChange();
   }
 }
 
-function stopStreamRuntime() {
-  streamRunning = false;
-  if (streamRuntime) {
-    streamRuntime.stop();
+function stopRoomSubscriptions() {
+  if (roomSubscriptionDispose) {
+    roomSubscriptionDispose();
+    roomSubscriptionDispose = null;
   }
+  latestRoomSharedState = null;
+  latestWinnerState = null;
+  latestPlayerRevealState = null;
+  optimisticMinedCellIndexes.clear();
+  roomLifecycleState = 'Lobby';
+  roomLifecycleActionInFlight = false;
+  sessionEnsureInFlight = false;
+  roomCancelInFlight = false;
+  applyMineMaskToVisuals();
+  syncRoomWaitOverlay();
+  renderStreamStatus(activeRoomCode ? deriveRoomLifecycleStatusText() : 'Disconnected');
+  roomRuntime?.clearSession?.();
 }
 
-async function forceResyncStreamRuntime() {
-  if (streamResyncInFlight || !streamRuntime) {
+function parseMineFailure(error) {
+  const text = asErrorText(error);
+  const normalized = text.toLowerCase();
+  if (normalized.includes('invalidcoordinate') || normalized.includes('0x1776')) {
+    return 'Mine rejected: coordinate out of range.';
+  }
+  if (normalized.includes('cellalreadymined') || normalized.includes('0x1777')) {
+    return 'Mine rejected: coordinate already mined.';
+  }
+  if (normalized.includes('unauthorized') || normalized.includes('0x1772')) {
+    return 'Mine rejected: unauthorized caller/session.';
+  }
+  if (normalized.includes('invalidsessiontoken') || normalized.includes('0x177a')) {
+    return 'Mine rejected: session expired, retrying.';
+  }
+  return text;
+}
+
+function isAlreadyJoinedError(error) {
+  const normalized = asErrorText(error).toLowerCase();
+  return normalized.includes('alreadyjoined') || normalized.includes('0x1775');
+}
+
+async function runLifecycleAutomationIfNeeded() {
+  if (roomLifecycleActionInFlight || !roomRuntime || !activeRoomCode || !latestRoomSharedState) {
+    return;
+  }
+  const wallet = walletGateway?.getState?.().publicKey;
+  if (!wallet) {
+    return;
+  }
+  const room = latestRoomSharedState;
+  const isCreator = room.creatorBase58 === wallet;
+  const isWinner = room.winnerBase58 === wallet;
+
+  if (room.status === 'WaitingForVrf' && isCreator) {
+    roomLifecycleActionInFlight = true;
+    try {
+      queueNotificationBopper('Delegating room state…', { tone: 'info', meta: 'base layer' });
+      await roomRuntime.delegatePrivateState(activeRoomCode);
+      queueNotificationBopper('Requesting winner VRF…', { tone: 'info', meta: 'ER router' });
+      await roomRuntime.requestWinnerVrf(activeRoomCode);
+      queueNotificationBopper('VRF request submitted.', { tone: 'success' });
+    } catch (error) {
+      queueNotificationBopper('Room activation failed.', {
+        tone: 'danger',
+        meta: asErrorText(error),
+        ttlMs: 4200
+      });
+    } finally {
+      roomLifecycleActionInFlight = false;
+    }
     return;
   }
 
-  streamResyncInFlight = true;
-  queueNotificationBopper('Resync requested.', {
-    tone: 'warning',
-    meta: 'Reconnecting managed runtime'
+  if (room.status === 'Won' && isWinner) {
+    roomLifecycleActionInFlight = true;
+    try {
+      queueNotificationBopper('Finalizing win…', { tone: 'info', meta: 'ER finalize' });
+      await roomRuntime.finalizeWin(activeRoomCode);
+      await roomRuntime.processUndelegation(activeRoomCode);
+      await roomRuntime.settleWinPayout(activeRoomCode);
+      queueNotificationBopper('Payout settled on base layer.', {
+        tone: 'success',
+        meta: 'two-phase flow complete'
+      });
+      roomRuntime.clearSession();
+    } catch (error) {
+      queueNotificationBopper('Settlement step failed.', {
+        tone: 'danger',
+        meta: asErrorText(error),
+        ttlMs: 4200
+      });
+    } finally {
+      roomLifecycleActionInFlight = false;
+    }
+  }
+}
+
+function handleRoomStateUpdate(nextState) {
+  if (!nextState || typeof nextState !== 'object') {
+    return;
+  }
+  if (nextState.error) {
+    renderStreamStatus(`Error: ${nextState.error}`);
+    syncRoomWaitOverlay();
+    onPointerLockChange();
+    return;
+  }
+
+  latestRoomSharedState = nextState.roomShared || latestRoomSharedState;
+  latestWinnerState = nextState.winnerState || latestWinnerState;
+  latestPlayerRevealState = nextState.playerReveal || latestPlayerRevealState;
+  roomLifecycleState = nextState.lifecycleState || roomLifecycleState;
+
+  if (latestWinnerState?.minedMask) {
+    for (const idx of [...optimisticMinedCellIndexes]) {
+      if (roomRuntime.maskBitSet(latestWinnerState.minedMask, idx)) {
+        optimisticMinedCellIndexes.delete(idx);
+      }
+    }
+  }
+
+  applyMineMaskToVisuals();
+  syncRoomWaitOverlay();
+  onPointerLockChange();
+  renderStreamStatus(deriveRoomLifecycleStatusText());
+
+  if (
+    roomLifecycleState === 'Active'
+    && latestRoomSharedState
+    && roomRuntime
+    && !sessionEnsureInFlight
+    && !roomRuntime.hasActiveSession()
+  ) {
+    const wallet = walletGateway?.getState?.().publicKey;
+    const isParticipant = wallet
+      && (latestRoomSharedState.playerOneBase58 === wallet
+      || latestRoomSharedState.playerTwoBase58 === wallet);
+    if (isParticipant) {
+      sessionEnsureInFlight = true;
+      roomRuntime.ensureMiningSession()
+        .then(() => {
+          queueNotificationBopper('Session key ready.', {
+            tone: 'success',
+            meta: 'Wallet-free mining enabled'
+          });
+        })
+        .catch((error) => {
+          queueNotificationBopper('Session key setup failed.', {
+            tone: 'danger',
+            meta: asErrorText(error),
+            ttlMs: 3600
+          });
+        })
+        .finally(() => {
+          sessionEnsureInFlight = false;
+        });
+    }
+  }
+
+  if (roomLifecycleState === 'PayoutSettled' && latestRoomSharedState) {
+    const wallet = walletGateway?.getState?.().publicKey;
+    const winnerOutcome = wallet && latestRoomSharedState.winnerBase58 === wallet ? 'win' : 'lose';
+    showMatchResultOverlay({ winner: winnerOutcome });
+    activeRoomCode = '';
+    clearStoredRoomContext();
+    roomRuntime?.clearSession?.();
+  }
+
+  void runLifecycleAutomationIfNeeded();
+}
+
+function createOrUpdateRoomRuntime() {
+  if (!walletGateway) {
+    return;
+  }
+
+  roomRuntime = createRoomRuntime({
+    walletGateway,
+    programId: CONFIG.mineDuelProgramId,
+    erRpcUrl: CONFIG.erRpcUrl,
+    erWsUrl: CONFIG.erWsUrl
   });
-  stopStreamRuntime();
-  await startStreamRuntimeIfReady();
-  streamResyncInFlight = false;
+}
+
+function subscribeToActiveRoom() {
+  if (!roomRuntime || !activeRoomCode) {
+    renderStreamStatus('No room selected');
+    syncRoomWaitOverlay();
+    onPointerLockChange();
+    return;
+  }
+
+  const wallet = walletGateway?.getState?.();
+  if (!wallet?.connected || !wallet.publicKey) {
+    renderStreamStatus('Connect wallet to subscribe');
+    syncRoomWaitOverlay();
+    onPointerLockChange();
+    return;
+  }
+
+  stopRoomSubscriptions();
+  roomSubscriptionDispose = roomRuntime.subscribeRoom({
+    roomCode: activeRoomCode,
+    localPlayer: wallet.publicKey,
+    onState: handleRoomStateUpdate
+  });
+  syncRoomWaitOverlay();
+  onPointerLockChange();
+  renderStreamStatus(`Subscribing (${compactPublicKey(activeRoomCode)})`);
 }
 
 // ---------------------------------------------
@@ -2212,8 +2597,14 @@ function isPointerLocked() {
 }
 
 function onPointerLockChange() {
-  const gameplayActive = isPointerLocked() && !editorModeEnabled;
-  blocker.style.display = gameplayActive || editorModeEnabled ? 'none' : 'flex';
+  if (isPointerLocked() && !editorModeEnabled && !isGameplayLifecycleActive() && document.exitPointerLock) {
+    document.exitPointerLock();
+    return;
+  }
+
+  const gameplayActive = isPointerLocked() && !editorModeEnabled && isGameplayLifecycleActive();
+  const roomWaitVisible = Boolean(roomWaitOverlay?.classList.contains('is-visible'));
+  blocker.style.display = gameplayActive || editorModeEnabled || roomWaitVisible ? 'none' : 'flex';
   if (crosshair) {
     crosshair.hidden = !gameplayActive;
   }
@@ -2226,6 +2617,10 @@ function onPointerLockChange() {
 }
 
 function requestPointerLock() {
+  if (!editorModeEnabled && !isGameplayLifecycleActive()) {
+    syncRoomWaitOverlay();
+    return;
+  }
   if (document.body.requestPointerLock) {
     document.body.requestPointerLock();
   }
@@ -2239,8 +2634,71 @@ function onMouseMove(event) {
   firstPersonController.setToward(event.movementX, event.movementY, CONFIG.mouseLookSpeed);
 }
 
+async function submitOnChainMineFromHit(visualHit) {
+  if (!roomRuntime || !activeRoomCode) {
+    queueNotificationBopper('Mine unavailable.', {
+      tone: 'warning',
+      meta: 'Create or join a room first'
+    });
+    return;
+  }
+
+  const gameplayCell = resolveGameplayCellFromHit(visualHit);
+  if (!gameplayCell?.inBounds) {
+    queueNotificationBopper('Mine rejected.', {
+      tone: 'warning',
+      meta: 'Target is outside gameplay grid'
+    });
+    return;
+  }
+
+  const sourceMaterial = resolveHitMaterial(visualHit);
+  resolveMineHitPose(visualHit, mineBreakHitPosition, mineBreakHitNormal, mineBreakHitScale);
+  mineBreakHitPosition.addScaledVector(mineBreakHitNormal, 0.05);
+
+  let mineResult = null;
+  try {
+    mineResult = await roomRuntime.mine(activeRoomCode, gameplayCell);
+  } catch (error) {
+    queueNotificationBopper('Mine failed.', {
+      tone: 'danger',
+      meta: parseMineFailure(error),
+      ttlMs: 3600
+    });
+    return;
+  }
+
+  const bitIndex = Number(mineResult?.bitIndex);
+  if (Number.isInteger(bitIndex) && bitIndex >= 0) {
+    markOptimisticMineCell(bitIndex, true);
+  }
+
+  spawnMineBreakDebris({
+    position: mineBreakHitPosition,
+    normal: mineBreakHitNormal,
+    scale: mineBreakHitScale,
+    sourceMaterial
+  });
+
+  try {
+    const confirmation = await mineResult.confirmation;
+    if (confirmation?.value?.err) {
+      throw new Error(JSON.stringify(confirmation.value.err));
+    }
+  } catch (error) {
+    if (Number.isInteger(bitIndex) && bitIndex >= 0) {
+      markOptimisticMineCell(bitIndex, false);
+    }
+    queueNotificationBopper('Mine rejected.', {
+      tone: 'danger',
+      meta: parseMineFailure(error),
+      ttlMs: 3600
+    });
+  }
+}
+
 function onMouseDown(event) {
-  if (!isPointerLocked() || editorModeEnabled) {
+  if (!isPointerLocked() || editorModeEnabled || !isGameplayLifecycleActive()) {
     return;
   }
 
@@ -2262,20 +2720,11 @@ function onMouseDown(event) {
   lastMineAtMs = nowMs;
 
   const visualHit = getMineCenterRaycastHit(camera, MINE_BREAK_MAX_DISTANCE);
-  if (visualHit && breakVisualMineTarget(visualHit)) {
+  if (!visualHit) {
     return;
   }
 
-  if (!voxelRuntime) {
-    return;
-  }
-
-  const voxel = voxelRuntime.raycastMine(camera, MINE_BREAK_MAX_DISTANCE);
-  if (!voxel) {
-    return;
-  }
-
-  voxelRuntime.setVoxelValue(voxel, 0);
+  void submitOnChainMineFromHit(visualHit);
 }
 
 function onMouseUp(event) {
@@ -2413,8 +2862,12 @@ function onResize() {
 }
 
 function bindEvents() {
+  if (eventsBound) {
+    return;
+  }
   instructions.addEventListener('click', requestPointerLock);
   instructions.addEventListener('keydown', onInstructionsKeydown);
+  roomWaitCancelButton?.addEventListener('click', onRoomWaitCancelClick);
 
   document.addEventListener('pointerlockchange', onPointerLockChange);
   document.addEventListener('keydown', onKeyDown);
@@ -2425,6 +2878,7 @@ function bindEvents() {
   document.addEventListener('contextmenu', onContextMenu);
   window.addEventListener('resize', onResize);
   window.addEventListener('beforeunload', teardownWalletConnector);
+  eventsBound = true;
 }
 
 // ---------------------------------------------
@@ -2493,7 +2947,7 @@ function animate() {
   const nowMs = performance.now();
   const rawDeltaSeconds = (nowMs - prevTimeMs) / 1000;
   const deltaSeconds = Math.min(rawDeltaSeconds, CONFIG.maxDeltaSeconds);
-  const gameplayActive = isPointerLocked() && !editorModeEnabled;
+  const gameplayActive = isPointerLocked() && !editorModeEnabled && isGameplayLifecycleActive();
 
   updateFpsCounter(deltaSeconds * 1000);
   firstPersonController.update(deltaSeconds, { gameplayActive });
@@ -2525,7 +2979,7 @@ function animate() {
   });
 
   const renderCamera = editorBridge?.getRenderCamera ? editorBridge.getRenderCamera() : camera;
-  updateHoveredMineVoxel(renderCamera, !editorModeEnabled);
+  updateHoveredMineVoxel(renderCamera, gameplayActive);
 
   prevTimeMs = nowMs;
   if (postProcessRuntime?.render) {
@@ -2536,6 +2990,11 @@ function animate() {
 }
 
 async function startGame() {
+  if (!activeRoomCode) {
+    renderStreamStatus('No room selected');
+    syncRoomWaitOverlay();
+    return;
+  }
   resetNotificationBopper();
   bindEvents();
   await initializeWorld();
@@ -2548,19 +3007,27 @@ async function startGame() {
   await mountDevEditorIfEnabled();
   firstPersonController.setSpawn(playerSpawnPosition, playerSpawnYaw);
   firstPersonController.resetToSpawn();
+  syncRoomWaitOverlay();
   onPointerLockChange();
   queueNotificationBopper('Notification bopper online.', {
     tone: 'info',
     meta: 'Bottom-right game alerts ready'
   });
+  renderStreamStatus(deriveRoomLifecycleStatusText());
   renderer.setAnimationLoop(animate);
 }
 
 async function bootstrap() {
   const { initRouter } = await import('./router.js');
   const { mountLobby } = await import('./views/lobby.js');
+  const storedRoomContext = loadStoredRoomContext();
+  if (storedRoomContext) {
+    activeRoomCode = storedRoomContext.roomCode;
+    selectedPlayerModelPath = storedRoomContext.selectedModelPath;
+  }
 
   await initializeWalletConnector();
+  createOrUpdateRoomRuntime();
 
   /**
    * @param {string | undefined} nextModelPath
@@ -2570,24 +3037,121 @@ async function bootstrap() {
     selectedPlayerModelPath = normalized || DEFAULT_PLAYER_MODEL_PATH;
   }
 
+  async function handleCreateRoom({ stakeSol, selectedModelPath }) {
+    if (!walletGateway?.getState?.().connected) {
+      throw new Error('Connect wallet first.');
+    }
+    setSelectedPlayerModelPath(selectedModelPath);
+    createOrUpdateRoomRuntime();
+    if (!roomRuntime) {
+      throw new Error('Gameplay runtime unavailable.');
+    }
+
+    const stakeValue = Number(stakeSol);
+    if (!Number.isFinite(stakeValue) || stakeValue <= 0) {
+      throw new Error('Stake must be greater than zero.');
+    }
+    const stakeLamports = Math.max(1, Math.round(stakeValue * 1_000_000_000));
+    const created = await roomRuntime.createRoom(stakeLamports);
+    activeRoomCode = created.roomCode;
+    saveRoomContext({
+      roomCode: activeRoomCode,
+      selectedModelPath
+    });
+
+    queueNotificationBopper('Room created on chain.', {
+      tone: 'success',
+      meta: compactPublicKey(activeRoomCode)
+    });
+
+    return {
+      roomCode: activeRoomCode
+    };
+  }
+
+  async function handleEnterGame({ roomCode, selectedModelPath }) {
+    const roomCodeText = typeof roomCode === 'string' ? roomCode.trim() : '';
+    if (!roomCodeText) {
+      throw new Error('Room code is required.');
+    }
+    if (!walletGateway?.getState?.().connected) {
+      throw new Error('Connect wallet first.');
+    }
+
+    setSelectedPlayerModelPath(selectedModelPath);
+    createOrUpdateRoomRuntime();
+    if (!roomRuntime) {
+      throw new Error('Gameplay runtime unavailable.');
+    }
+
+    const walletPubkey = walletGateway.getState().publicKey;
+    if (walletPubkey !== roomCodeText) {
+      try {
+        await roomRuntime.joinRoom(roomCodeText);
+      } catch (error) {
+        if (!isAlreadyJoinedError(error)) {
+          throw error;
+        }
+        const existing = await roomRuntime.fetchRoomState(roomCodeText, walletPubkey);
+        if (existing.roomShared?.playerTwoBase58 !== walletPubkey) {
+          throw error;
+        }
+      }
+    }
+
+    const state = await roomRuntime.fetchRoomState(roomCodeText, walletPubkey);
+    if (!state.roomShared) {
+      throw new Error('Room not found on chain.');
+    }
+    const isParticipant = state.roomShared.playerOneBase58 === walletPubkey
+      || state.roomShared.playerTwoBase58 === walletPubkey;
+    if (!isParticipant) {
+      throw new Error('Wallet is not a participant in this room.');
+    }
+
+    activeRoomCode = roomCodeText;
+    saveRoomContext({
+      roomCode: activeRoomCode,
+      selectedModelPath
+    });
+  }
+
   const router = initRouter({
     onLobby() {
       hideMatchResultOverlay();
+      setRoomWaitOverlayVisible(false);
       resetNotificationBopper();
+      stopRoomSubscriptions();
       mountLobby({
         walletGateway,
+        initialRoomCode: activeRoomCode,
         initialSelectedModelPath: selectedPlayerModelPath,
-        onEnterGame(nextModelPath) {
-          setSelectedPlayerModelPath(nextModelPath);
+        async onCreateRoom(payload) {
+          const created = await handleCreateRoom(payload);
+          return created;
+        },
+        async onEnterGame(payload) {
+          await handleEnterGame(payload);
           gameRouter?.goToGame?.();
         }
       });
     },
     onGame() {
       hideMatchResultOverlay();
+      syncRoomWaitOverlay();
       if (!walletGateway?.getState?.().connected) {
         window.location.hash = '#/lobby';
         return;
+      }
+      if (!activeRoomCode) {
+        const restored = loadStoredRoomContext();
+        if (restored?.roomCode) {
+          activeRoomCode = restored.roomCode;
+          setSelectedPlayerModelPath(restored.selectedModelPath);
+        } else {
+          window.location.hash = '#/lobby';
+          return;
+        }
       }
       void startGame();
     }

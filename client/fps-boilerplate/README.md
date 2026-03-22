@@ -55,7 +55,7 @@ This is the active client prototype in the workspace, not the final production c
 - Runtime first-person tool viewmodel now loads Kenney Survival `GLB format/tool-pickaxe.glb` and attaches it to camera space with a camera-space cloned right-arm holder (Minecraft-style in-hand view), with gameplay-only visibility (hidden in editor), decoupled scale (`tool-root/arm` stays at `0.22` while pickaxe renders at world-scale `1.0`), preserved arm handedness/orientation from the source rig (no arm-axis mirroring), a more outward resting tool rotation, and a faster extra-aggressive mine animation with a larger up-then-down strike arc, stronger impact jitter, emissive energy pulse, and stronger idle sway.
 - First-person pickaxe viewmodel materials now preserve self-occlusion (`depthTest=true`, `depthWrite=false`) and enforce linear+mipmapped texture sampling with anisotropy so the in-hand atlas renders smoothly at close camera distance.
 - Mine-break debris particles now launch with stronger spread/speed, heavier spin, lower drag, longer hang-time, and larger chunk sizes so the floating breakup reads more aggressive during block destruction.
-- Mine hover targeting now drives a shader-based white full-face overlay across the entire currently aimed stone/ore block in the mine area (`src/runtime/voxelRuntime.js`), with frame-level camera raycast in `src/main.js` and fallback targeting from mine patch instanced meshes when voxel-stream data is unavailable.
+- Mine hover targeting now drives a shader-based white full-face overlay across the entire currently aimed stone/ore block in the mine area (`src/runtime/voxelRuntime.js`), with frame-level camera raycast in `src/main.js` and deterministic map-grid coordinate projection before on-chain `mine(x,y,z)` dispatch.
 - Atmosphere runtime (`src/runtime/atmosphereRuntime.js`) now drives a PEAK-inspired sky model (cinematic warm horizon, cool zenith, layered clouds, and top-locked gameplay sun lighting/fog/exposure, without an in-view sun orb).
 - Rendering now uses post-processing (`src/runtime/postProcessRuntime.js`) with highlight bloom + cinematic color grading + FXAA through `EffectComposer`.
 - Shared biome style presets now live in `src/runtime/blockworldStyleRuntime.js`, and are consumed by map/atmosphere/voxel/post runtimes.
@@ -89,14 +89,18 @@ This is the active client prototype in the workspace, not the final production c
 - `VITE_SOLANA_NETWORK` (`devnet` | `testnet` | `mainnet-beta`, default `devnet`)
 - `VITE_SOLANA_RPC_URL` (optional explicit base RPC for chain reads/writes; must support websocket subscriptions for room/reveal updates)
 - `VITE_ER_RPC_URL` (optional explicit ER RPC/rollup router URL for session-key mining instructions).
-- Optional debug-only migration keys (not used by the default gameplay path): `VITE_ENABLE_MANAGED_PER`, `VITE_PER_RUNTIME_URL`, `VITE_WORLD_PROFILE_ID`, `VITE_ENABLE_WORLD_STREAM_GATEWAY`, `VITE_WORLD_STREAM_GATEWAY_URL`.
+- `VITE_ER_WS_URL` (optional explicit websocket endpoint for ER account subscriptions; defaults to ER RPC ws transform).
+- Managed `world_profile`/PER stream gateway flow is deprecated in this client path and no longer the default gameplay runtime.
 - Gameplay is two-phase on finalization: `finalize_win` on ER schedules undelegation, then `settle_win_payout` is submitted on base when writable ownership returns.
 
 ### Gameplay Architecture (v1)
 
 - Canonical room states: `Lobby` -> `WaitingForOpponent` -> `WaitingForVrf` -> `Active` -> `Won` -> `Finalized` -> `PayoutSettled`.
+- Game input/pointer-lock is hard-gated to `Active`; creators entering immediately after `create_room` stay in a wait screen until player two joins.
+- While in `WaitingForOpponent`/`WaitingForVrf`, gameplay route renders a room-status overlay with the full room code; creator sees a `Cancel Room` action wired to on-chain `cancel_room_prejoin`.
 - Base (L1) runtime writes: `create_room` / `cancel_room_prejoin` / `join_room` / `delegate_private_state` / `settle_win_payout`.
-- ER/runtime writes: `request_winner_vrf` / `mine` / `finalize_win` / `process_undelegation` / `consume_winner_vrf`.
+- ER/runtime writes: `request_winner_vrf` / `mine` / `finalize_win`.
+- Settlement support: base-layer `process_undelegation` after `finalize_win` ownership return.
 - Session keys are auto-managed in client: create when entering `Active`, sign repeated `mine` only with session signer, refresh/revoke around room exit and settlement.
 - Room discovery is room-code-only and uses creator-owned single-PDA naming; there is no room-browser list in client v1.
 - Match completion is two-step payout: `finalize_win` commits + undelegation, then base-layer `settle_win_payout` drains escrow and confirms final payout.
@@ -146,6 +150,7 @@ Available only when running with `VITE_ENABLE_EDITOR=1`.
 - Includes a real-time FPS counter
 - Uses Lobby-aligned styling for the gameplay HUD shell, wallet controls, crosshair glow treatment, sprint bar, and pointer-lock instruction overlay
 - Includes a bottom-right notification bopper for gameplay runtime events (wallet transitions, routing state, and settlement/failure notices)
+- Includes a room wait overlay that shows room code + lifecycle messaging before match activation, with creator-only cancel while pre-join.
 - Includes a match end visual overlay (winner/loser card) with a 3-2-1 countdown before returning to lobby
 - Shows a centered Minecraft-style crosshair during active pointer-lock gameplay
 - Shows a stamina sprint bar near the bottom-center that scales/fades based on sprint remaining

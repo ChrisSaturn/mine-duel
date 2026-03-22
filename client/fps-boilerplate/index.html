@@ -27,7 +27,7 @@
           <p id="wallet-status">Status: <span id="wallet-status-value">Disconnected</span></p>
           <p id="wallet-address">Address: <span id="wallet-address-value">--</span></p>
           <p id="wallet-rpc">RPC: <span id="wallet-rpc-value">--</span></p>
-          <p id="stream-status">Stream: <span id="stream-status-value">Disconnected</span></p>
+          <p id="stream-status">Gameplay: <span id="stream-status-value">Disconnected</span></p>
         </section>
       </div>
       <div id="crosshair" aria-hidden="true" hidden>
@@ -58,6 +58,17 @@
             <span id="match-result-countdown-value" aria-live="polite" aria-atomic="true">3</span>
           </p>
           <p class="match-result-caption" id="match-result-caption">Press any key to continue</p>
+        </section>
+      </div>
+
+      <div id="room-wait-overlay" role="dialog" aria-live="polite" aria-atomic="true" aria-hidden="true" hidden>
+        <div class="room-wait-backdrop" aria-hidden="true"></div>
+        <section class="room-wait-card" aria-label="Room lifecycle status">
+          <p class="room-wait-kicker" id="room-wait-state">WAITING FOR PLAYER</p>
+          <h2 class="room-wait-title">ROOM CODE</h2>
+          <p class="room-wait-code" id="room-wait-code">--</p>
+          <p class="room-wait-meta" id="room-wait-meta">Share this room code with your opponent to begin.</p>
+          <button id="room-wait-cancel" class="room-wait-cancel" type="button" hidden>Cancel Room</button>
         </section>
       </div>
 

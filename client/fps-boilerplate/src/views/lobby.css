@@ -764,6 +764,10 @@
   text-transform: uppercase;
 }
 
+.lobby-room-input--room-code {
+  text-transform: none;
+}
+
 .lobby-room-input:focus-visible {
   outline: 2px solid rgba(46, 208, 255, 0.9);
   outline-offset: 1px;
@@ -775,6 +779,13 @@
   font-size: clamp(0.5rem, 0.72vw, 0.62rem);
   line-height: 1.25;
   text-transform: uppercase;
+}
+
+.lobby-room-hint {
+  margin: 0;
+  color: rgba(187, 211, 243, 0.92);
+  font-size: clamp(0.46rem, 0.68vw, 0.58rem);
+  line-height: 1.2;
 }
 
 .lobby-room-meta {

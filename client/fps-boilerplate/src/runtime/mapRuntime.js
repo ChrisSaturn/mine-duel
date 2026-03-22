@@ -39,6 +39,16 @@ const CUBE_WORLD_STONE_PATCH_START_X = Math.floor(
 const CUBE_WORLD_STONE_PATCH_START_Z = Math.floor(
   (CUBE_WORLD_GROUND_TILES_Z - CUBE_WORLD_STONE_PATCH_TILES_Z) * 0.5
 );
+const DEFAULT_GAMEPLAY_GRID = Object.freeze({
+  origin: [-7.5, -0.5, -7.5],
+  cellSize: [1, 1, 1],
+  axes: {
+    x: [1, 0, 0],
+    y: [0, -1, 0],
+    z: [0, 0, 1]
+  },
+  dims: [16, 8, 16]
+});
 const STONE_PATCH_VARIANT_WEIGHTS = Object.freeze({
   stone: 62,
   coal: 16,
@@ -159,6 +169,102 @@ function normalizeScale(value) {
   return source.map((component) => Math.max(Math.abs(component), MIN_SCALE_COMPONENT));
 }
 
+function normalizeAxisVector(value, fallback) {
+  const source = normalizeVector3(value, fallback);
+  const length = Math.hypot(source[0], source[1], source[2]);
+  if (!Number.isFinite(length) || length < 1e-6) {
+    return [...fallback];
+  }
+  return [
+    source[0] / length,
+    source[1] / length,
+    source[2] / length
+  ];
+}
+
+function normalizeGameplayGrid(gameplayGrid) {
+  const source = gameplayGrid && typeof gameplayGrid === 'object' ? gameplayGrid : {};
+  const defaultGrid = DEFAULT_GAMEPLAY_GRID;
+  const axes = source.axes && typeof source.axes === 'object' ? source.axes : {};
+  const dimsSource = Array.isArray(source.dims) ? source.dims : defaultGrid.dims;
+
+  return {
+    origin: normalizeVector3(source.origin, defaultGrid.origin),
+    cellSize: normalizeVector3(source.cellSize, defaultGrid.cellSize).map((value) => Math.max(Math.abs(value), 1e-4)),
+    axes: {
+      x: normalizeAxisVector(axes.x, defaultGrid.axes.x),
+      y: normalizeAxisVector(axes.y, defaultGrid.axes.y),
+      z: normalizeAxisVector(axes.z, defaultGrid.axes.z)
+    },
+    dims: [
+      Math.max(1, Math.floor(Math.abs(toFiniteNumber(dimsSource[0], defaultGrid.dims[0])))),
+      Math.max(1, Math.floor(Math.abs(toFiniteNumber(dimsSource[1], defaultGrid.dims[1])))),
+      Math.max(1, Math.floor(Math.abs(toFiniteNumber(dimsSource[2], defaultGrid.dims[2]))))
+    ]
+  };
+}
+
+function dot3(a, b) {
+  return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+}
+
+function asPositionArray(value) {
+  if (Array.isArray(value)) {
+    return normalizeVector3(value, [0, 0, 0]);
+  }
+  if (value && typeof value === 'object') {
+    return [
+      toFiniteNumber(value.x, 0),
+      toFiniteNumber(value.y, 0),
+      toFiniteNumber(value.z, 0)
+    ];
+  }
+  return [0, 0, 0];
+}
+
+export function isGameplayCellInBounds(cell, gameplayGrid) {
+  const grid = normalizeGameplayGrid(gameplayGrid);
+  const x = Math.floor(toFiniteNumber(cell?.x, -1));
+  const y = Math.floor(toFiniteNumber(cell?.y, -1));
+  const z = Math.floor(toFiniteNumber(cell?.z, -1));
+  return x >= 0
+    && y >= 0
+    && z >= 0
+    && x < grid.dims[0]
+    && y < grid.dims[1]
+    && z < grid.dims[2];
+}
+
+export function worldPositionToGameplayCell(worldPosition, gameplayGrid) {
+  const grid = normalizeGameplayGrid(gameplayGrid);
+  const world = asPositionArray(worldPosition);
+  const relative = [
+    world[0] - grid.origin[0],
+    world[1] - grid.origin[1],
+    world[2] - grid.origin[2]
+  ];
+
+  const xFloat = dot3(relative, grid.axes.x) / grid.cellSize[0];
+  const yFloat = dot3(relative, grid.axes.y) / grid.cellSize[1];
+  const zFloat = dot3(relative, grid.axes.z) / grid.cellSize[2];
+
+  const x = Math.round(xFloat);
+  const y = Math.round(yFloat);
+  const z = Math.round(zFloat);
+
+  return {
+    x,
+    y,
+    z,
+    float: {
+      x: xFloat,
+      y: yFloat,
+      z: zFloat
+    },
+    inBounds: isGameplayCellInBounds({ x, y, z }, grid)
+  };
+}
+
 function cloneMapData(mapData) {
   return JSON.parse(JSON.stringify(mapData));
 }
@@ -260,6 +366,7 @@ export function normalizeMapData(rawMapData) {
     cameraPreset: normalizeCameraPreset(source.cameraPreset),
     playerPreset: normalizePlayerPreset(source.playerPreset),
     spawnPreset: normalizeSpawnPreset(source.spawnPreset),
+    gameplayGrid: normalizeGameplayGrid(source.gameplayGrid),
     hitboxes: Array.isArray(source.hitboxes)
       ? source.hitboxes.map((entry, index) => normalizeHitboxEntry(entry, index))
       : []
@@ -438,7 +545,9 @@ async function loadSceneTemplate(templateName) {
       stoneInstancesByVariant.set(source.key, {
         source,
         instances,
-        nextIndex: 0
+        nextIndex: 0,
+        cellCoords: new Array(instanceCount),
+        cellIndices: new Array(instanceCount)
       });
     }
 
@@ -474,6 +583,13 @@ async function loadSceneTemplate(templateName) {
             if (!targetVariant) {
               continue;
             }
+            const localX = x - CUBE_WORLD_STONE_PATCH_START_X;
+            const localZ = z - CUBE_WORLD_STONE_PATCH_START_Z;
+            const localCellIndex = (
+              (yLayer * patchDepth + localZ) * patchWidth
+            ) + localX;
+            targetVariant.cellCoords[targetVariant.nextIndex] = [localX, yLayer, localZ];
+            targetVariant.cellIndices[targetVariant.nextIndex] = localCellIndex;
             instanceMatrix.compose(
               composePosition,
               targetVariant.source.quaternion,
@@ -492,8 +608,19 @@ async function loadSceneTemplate(templateName) {
       }
     }
     grassInstances.instanceMatrix.needsUpdate = true;
-    for (const { instances } of stoneInstancesByVariant.values()) {
+    const gridOriginWorld = [
+      minX + CUBE_WORLD_STONE_PATCH_START_X * stepX,
+      baseY,
+      minZ + CUBE_WORLD_STONE_PATCH_START_Z * stepZ
+    ];
+    for (const variantState of stoneInstancesByVariant.values()) {
+      const { instances, cellCoords, cellIndices } = variantState;
       instances.instanceMatrix.needsUpdate = true;
+      instances.userData.minePatchCellCoords = cellCoords;
+      instances.userData.minePatchCellIndices = cellIndices;
+      instances.userData.minePatchDims = [patchWidth, CUBE_WORLD_STONE_PATCH_TILES_Y, patchDepth];
+      instances.userData.minePatchGridOriginWorld = gridOriginWorld;
+      instances.userData.minePatchCellStep = [stepX, stepY, stepZ];
     }
 
     const patchWorldWidth = patchWidth * stepX;
