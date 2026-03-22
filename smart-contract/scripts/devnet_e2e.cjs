@@ -1,11 +1,9 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const nacl = require('tweetnacl');
 const anchor = require('@coral-xyz/anchor');
 const {
   ConnectionMagicRouter,
-  getAuthToken,
   verifyTeeRpcIntegrity,
 } = require('@magicblock-labs/ephemeral-rollups-sdk');
 
@@ -28,7 +26,9 @@ const TEE_RPC_URL = process.env.TEE_RPC_URL || 'https://tee.magicblock.app';
 const COMMITMENT = 'confirmed';
 
 const DELEGATION_PROGRAM = new PublicKey('DELeGGvXpWV2fqJUhqcF5ZSYMS4JTLjteaAMARRSaeSh');
-const TEE_VALIDATOR = new PublicKey('FnE6VJT5QNZdedZPnCoLsARgBwoE6DeJNjBs2H1gySXA');
+const DELEGATION_VALIDATOR = process.env.DELEGATION_VALIDATOR
+  ? new PublicKey(process.env.DELEGATION_VALIDATOR)
+  : null;
 const SESSION_KEYS_PROGRAM = new PublicKey('KeyspM2ssCJbqUhQ4k7sveSiY4WjnYsrXkC8oDbwde5');
 const MAGIC_PROGRAM = new PublicKey('Magic11111111111111111111111111111111111111');
 const MAGIC_CONTEXT = new PublicKey('MagicContext1111111111111111111111111111111');
@@ -424,21 +424,6 @@ async function sendErTransaction(erConnection, transaction, signers) {
   return signature;
 }
 
-async function buildTeeConnectionForSigner(signer) {
-  const auth = await getAuthToken(
-    TEE_RPC_URL,
-    signer.publicKey,
-    async (message) => nacl.sign.detached(message, signer.secretKey)
-  );
-  const rpcUrl = `${TEE_RPC_URL}?token=${encodeURIComponent(auth.token)}`;
-  return {
-    connection: new Connection(rpcUrl, {
-      commitment: COMMITMENT,
-    }),
-    expiresAt: auth.expiresAt,
-  };
-}
-
 async function main() {
   const idlPath = path.resolve(__dirname, '..', 'target/idl/mine_duel.json');
   const idl = JSON.parse(fs.readFileSync(idlPath, 'utf8'));
@@ -512,6 +497,10 @@ async function main() {
   const vrfProgram = getInstructionAddress(idl, 'request_winner_vrf', 'vrf_program');
   const vrfProgramIdentity = getInstructionAddress(idl, 'consume_winner_vrf', 'vrf_program_identity');
   const requestProgramIdentity = pda([Buffer.from('identity')], programId);
+  const [erSlot, baseSlot] = await Promise.all([
+    erConnection.getSlot(COMMITMENT),
+    baseConnection.getSlot(COMMITMENT),
+  ]);
 
   const results = {
     timestamp: new Date().toISOString(),
@@ -519,6 +508,7 @@ async function main() {
       baseRpc: BASE_RPC_URL,
       erRpc: ER_RPC_URL,
       teeRpc: TEE_RPC_URL,
+      delegationValidator: DELEGATION_VALIDATOR ? DELEGATION_VALIDATOR.toBase58() : null,
       stakeLamports: STAKE_LAMPORTS,
       sessionTopupLamports: SESSION_TOPUP_LAMPORTS,
       creatorKeyPath: creatorPath,
@@ -554,6 +544,7 @@ async function main() {
   console.log(`Creator (${creatorPath ? 'provided' : 'fresh'}):`, results.actors.creator);
   console.log(`Player2 (${player2Path ? 'provided' : 'fresh'}):`, results.actors.player2);
   console.log('Room PDA:', results.pdas.room);
+  console.log(`Startup slot heads -> er: ${erSlot}, base: ${baseSlot}`);
 
   assertOrThrow(
     programId.toBase58() === '4b2q3K4cgr1P8FkjbcQ8nssDxLb9dhdVgVtrknvn5igJ',
@@ -622,7 +613,23 @@ async function main() {
   results.signatures.joinRoom = joinRoomSignature;
   console.log('join_room tx:', joinRoomSignature);
 
-  const roomAfterJoin = await fetchAndDecode(baseProgramCreator, baseConnection, 'RoomShared', room);
+  const roomAfterJoin = await waitForCondition(
+    'room transitions to waitingForVrf after join',
+    20_000,
+    1000,
+    async () => {
+      try {
+        const candidate = await fetchAndDecode(baseProgramCreator, baseConnection, 'RoomShared', room);
+        const status = enumKey(candidate.decoded.status);
+        if (status === 'waitingForVrf') {
+          return candidate;
+        }
+        return null;
+      } catch (_error) {
+        return null;
+      }
+    }
+  );
   const statusAfterJoin = enumKey(roomAfterJoin.decoded.status);
   assertOrThrow(statusAfterJoin === 'waitingForVrf', `Expected waitingForVrf, got ${statusAfterJoin}`);
   results.states.afterJoin = {
@@ -638,7 +645,7 @@ async function main() {
       roomCreator: creatorPk,
       playerOne: creatorPk,
       playerTwo: player2Pk,
-      validator: TEE_VALIDATOR,
+      validator: DELEGATION_VALIDATOR,
       room,
       vault,
       winnerState,
@@ -686,26 +693,14 @@ async function main() {
     endpoint: TEE_RPC_URL,
     ok: teeIntegrityOk,
   };
-
-  const creatorTee = await buildTeeConnectionForSigner(creator);
-  const creatorTeeProvider = new anchor.AnchorProvider(
-    creatorTee.connection,
-    new anchor.Wallet(creator),
-    {
-      commitment: COMMITMENT,
-      preflightCommitment: COMMITMENT,
-    }
-  );
-  const creatorTeeProgram = new anchor.Program(idl, creatorTeeProvider);
-  results.states.creatorTeeTokenExpiresAt = creatorTee.expiresAt;
+  results.states.startupSlots = { erSlot, baseSlot };
 
   const requestSeed = Number(process.env.VRF_CLIENT_SEED || 17);
-  const requestVrfTx = await creatorTeeProgram.methods
+  const requestVrfTx = await erProgramCreator.methods
     .requestWinnerVrf(requestSeed)
     .accounts({
       payer: creatorPk,
       room,
-      winnerState,
       oracleQueue: vrfOracleQueue,
       programIdentity: requestProgramIdentity,
       vrfProgram,
@@ -713,7 +708,7 @@ async function main() {
       systemProgram: SystemProgram.programId,
     })
     .transaction();
-  const requestVrfSignature = await sendErTransaction(creatorTee.connection, requestVrfTx, [creator]);
+  const requestVrfSignature = await sendErTransaction(erConnection, requestVrfTx, [creator]);
   results.signatures.requestWinnerVrf = requestVrfSignature;
   console.log('request_winner_vrf tx:', requestVrfSignature);
 
@@ -721,13 +716,13 @@ async function main() {
     try {
       const roomResult = await fetchAndDecodeAny(
         erProgramCreator,
-        [creatorTee.connection, erConnection, baseConnection],
+        [erConnection, baseConnection],
         'RoomShared',
         room
       );
       const winnerResult = await fetchAndDecodeAny(
         erProgramCreator,
-        [creatorTee.connection, erConnection, baseConnection],
+        [erConnection, baseConnection],
         'WinnerState',
         winnerState
       );
@@ -756,13 +751,13 @@ async function main() {
 
   const p1RevealBaseline = await fetchAndDecodeAny(
     erProgramCreator,
-    [creatorTee.connection, erConnection, baseConnection],
+    [erConnection, baseConnection],
     'PlayerReveal',
     playerOneReveal
   );
   const p2RevealBaseline = await fetchAndDecodeAny(
     erProgramCreator,
-    [creatorTee.connection, erConnection, baseConnection],
+    [erConnection, baseConnection],
     'PlayerReveal',
     playerTwoReveal
   );
@@ -804,10 +799,8 @@ async function main() {
   };
   console.log('create_session tx:', createSessionSignature);
 
-  const sessionTee = await buildTeeConnectionForSigner(sessionSigner);
-  results.states.sessionTeeTokenExpiresAt = sessionTee.expiresAt;
-  const sessionTeeProvider = new anchor.AnchorProvider(
-    sessionTee.connection,
+  const sessionErProvider = new anchor.AnchorProvider(
+    erConnection,
     new anchor.Wallet(sessionSigner),
     {
       commitment: COMMITMENT,
@@ -818,7 +811,7 @@ async function main() {
     commitment: COMMITMENT,
     preflightCommitment: COMMITMENT,
   });
-  const sessionTeeProgram = new anchor.Program(idl, sessionTeeProvider);
+  const sessionErProgram = new anchor.Program(idl, sessionErProvider);
   const baseProgramSession = new anchor.Program(idl, baseProviderSession);
 
   const minedCoords = [];
@@ -829,18 +822,18 @@ async function main() {
 
   const p1BeforeMine1 = await fetchAndDecodeAny(
     erProgramCreator,
-    [sessionTee.connection, creatorTee.connection, erConnection, baseConnection],
+    [erConnection, baseConnection],
     'PlayerReveal',
     playerOneReveal
   );
   const p2BeforeMine1 = await fetchAndDecodeAny(
     erProgramCreator,
-    [sessionTee.connection, creatorTee.connection, erConnection, baseConnection],
+    [erConnection, baseConnection],
     'PlayerReveal',
     playerTwoReveal
   );
 
-  const mineOneTx = await sessionTeeProgram.methods
+  const mineOneTx = await sessionErProgram.methods
     .mine(firstMineCoord[0], firstMineCoord[1], firstMineCoord[2])
     .accounts({
       payer: sessionSignerPk,
@@ -851,19 +844,19 @@ async function main() {
       sessionToken,
     })
     .transaction();
-  const mineOneSignature = await sendErTransaction(sessionTee.connection, mineOneTx, [sessionSigner]);
+  const mineOneSignature = await sendErTransaction(erConnection, mineOneTx, [sessionSigner]);
   results.signatures.mineSessionOne = mineOneSignature;
   console.log('mine #1 (session) tx:', mineOneSignature, firstMineCoord.join(','));
 
   const p1AfterMine1 = await fetchAndDecodeAny(
     erProgramCreator,
-    [sessionTee.connection, creatorTee.connection, erConnection, baseConnection],
+    [erConnection, baseConnection],
     'PlayerReveal',
     playerOneReveal
   );
   const p2AfterMine1 = await fetchAndDecodeAny(
     erProgramCreator,
-    [sessionTee.connection, creatorTee.connection, erConnection, baseConnection],
+    [erConnection, baseConnection],
     'PlayerReveal',
     playerTwoReveal
   );
@@ -887,7 +880,7 @@ async function main() {
     playerTwoChangedBits: p2Diff.changedBits,
   };
 
-  const mineTwoTx = await sessionTeeProgram.methods
+  const mineTwoTx = await sessionErProgram.methods
     .mine(secondMineCoord[0], secondMineCoord[1], secondMineCoord[2])
     .accounts({
       payer: sessionSignerPk,
@@ -898,14 +891,14 @@ async function main() {
       sessionToken,
     })
     .transaction();
-  const mineTwoSignature = await sendErTransaction(sessionTee.connection, mineTwoTx, [sessionSigner]);
+  const mineTwoSignature = await sendErTransaction(erConnection, mineTwoTx, [sessionSigner]);
   results.signatures.mineSessionTwo = mineTwoSignature;
   console.log('mine #2 (session) tx:', mineTwoSignature, secondMineCoord.join(','));
 
   await expectFailure(
     'invalid coords mine(16,2,0)',
     async () => {
-      const transaction = await sessionTeeProgram.methods
+      const transaction = await sessionErProgram.methods
         .mine(16, 2, 0)
         .accounts({
           payer: sessionSignerPk,
@@ -916,7 +909,7 @@ async function main() {
           sessionToken,
         })
         .transaction();
-      return sendErTransaction(sessionTee.connection, transaction, [sessionSigner]);
+      return sendErTransaction(erConnection, transaction, [sessionSigner]);
     },
     results.negativeTests
   );
@@ -924,7 +917,7 @@ async function main() {
   await expectFailure(
     'duplicate mine on already mined coord',
     async () => {
-      const transaction = await sessionTeeProgram.methods
+      const transaction = await sessionErProgram.methods
         .mine(firstMineCoord[0], firstMineCoord[1], firstMineCoord[2])
         .accounts({
           payer: sessionSignerPk,
@@ -935,7 +928,7 @@ async function main() {
           sessionToken,
         })
         .transaction();
-      return sendErTransaction(sessionTee.connection, transaction, [sessionSigner]);
+      return sendErTransaction(erConnection, transaction, [sessionSigner]);
     },
     results.negativeTests
   );
@@ -944,7 +937,7 @@ async function main() {
   await expectFailure(
     'unauthorized session token usage by creator payer',
     async () => {
-      const transaction = await creatorTeeProgram.methods
+      const transaction = await erProgramCreator.methods
         .mine(unauthorizedCoord[0], unauthorizedCoord[1], unauthorizedCoord[2])
         .accounts({
           payer: creatorPk,
@@ -955,7 +948,7 @@ async function main() {
           sessionToken,
         })
         .transaction();
-      return sendErTransaction(creatorTee.connection, transaction, [creator]);
+      return sendErTransaction(erConnection, transaction, [creator]);
     },
     results.negativeTests
   );
@@ -984,23 +977,21 @@ async function main() {
   );
   results.signatures.createExpiredSession = expiredSessionCreateSig;
 
-  const expiredTee = await buildTeeConnectionForSigner(expiredSigner);
-  results.states.expiredSessionTeeTokenExpiresAt = expiredTee.expiresAt;
-  const expiredTeeProvider = new anchor.AnchorProvider(
-    expiredTee.connection,
+  const expiredErProvider = new anchor.AnchorProvider(
+    erConnection,
     new anchor.Wallet(expiredSigner),
     {
       commitment: COMMITMENT,
       preflightCommitment: COMMITMENT,
     }
   );
-  const expiredTeeProgram = new anchor.Program(idl, expiredTeeProvider);
+  const expiredErProgram = new anchor.Program(idl, expiredErProvider);
 
   const expiredMineCoord = pickMineCoord(minedCoords, winnerCell, unauthorizedCoord[0] + 1);
   await expectFailure(
     'expired session token rejected',
     async () => {
-      const transaction = await expiredTeeProgram.methods
+      const transaction = await expiredErProgram.methods
         .mine(expiredMineCoord[0], expiredMineCoord[1], expiredMineCoord[2])
         .accounts({
           payer: expiredSigner.publicKey,
@@ -1011,7 +1002,7 @@ async function main() {
           sessionToken: expiredSessionToken,
         })
         .transaction();
-      return sendErTransaction(expiredTee.connection, transaction, [expiredSigner]);
+      return sendErTransaction(erConnection, transaction, [expiredSigner]);
     },
     results.negativeTests
   );
@@ -1037,7 +1028,7 @@ async function main() {
   await expectFailure(
     'invalid VRF signer consume_winner_vrf direct call',
     async () => {
-      const transaction = await creatorTeeProgram.methods
+      const transaction = await erProgramCreator.methods
         .consumeWinnerVrf(Array(32).fill(9))
         .accounts({
           vrfProgramIdentity: creatorPk,
@@ -1045,7 +1036,7 @@ async function main() {
           winnerState,
         })
         .transaction();
-      return sendErTransaction(creatorTee.connection, transaction, [creator]);
+      return sendErTransaction(erConnection, transaction, [creator]);
     },
     results.negativeTests
   );
@@ -1053,12 +1044,11 @@ async function main() {
   await expectFailure(
     'replay request_winner_vrf after already requested/active',
     async () => {
-      const transaction = await creatorTeeProgram.methods
+      const transaction = await erProgramCreator.methods
         .requestWinnerVrf(19)
         .accounts({
           payer: creatorPk,
           room,
-          winnerState,
           oracleQueue: vrfOracleQueue,
           programIdentity: requestProgramIdentity,
           vrfProgram,
@@ -1066,7 +1056,7 @@ async function main() {
           systemProgram: SystemProgram.programId,
         })
         .transaction();
-      return sendErTransaction(creatorTee.connection, transaction, [creator]);
+      return sendErTransaction(erConnection, transaction, [creator]);
     },
     results.negativeTests
   );
@@ -1075,12 +1065,12 @@ async function main() {
   const vaultBeforeFinalize = await fetchAndDecode(baseProgramCreator, baseConnection, 'VaultEscrow', vault);
   const roomBeforeFinalize = await fetchAndDecodeAny(
     erProgramCreator,
-    [sessionTee.connection, creatorTee.connection, erConnection, baseConnection],
+    [erConnection, baseConnection],
     'RoomShared',
     room
   );
 
-  const winningMineTx = await sessionTeeProgram.methods
+  const winningMineTx = await sessionErProgram.methods
     .mine(winnerCell[0], winnerCell[1], winnerCell[2])
     .accounts({
       payer: sessionSignerPk,
@@ -1091,17 +1081,13 @@ async function main() {
       sessionToken,
     })
     .transaction();
-  const winningMineSignature = await sendErTransaction(
-    sessionTee.connection,
-    winningMineTx,
-    [sessionSigner]
-  );
+  const winningMineSignature = await sendErTransaction(erConnection, winningMineTx, [sessionSigner]);
   results.signatures.mineWinningCell = winningMineSignature;
   console.log('mine winning cell tx:', winningMineSignature, winnerCell.join(','));
 
   const roomAfterWin = await fetchAndDecodeAny(
     erProgramCreator,
-    [sessionTee.connection, creatorTee.connection, erConnection, baseConnection],
+    [erConnection, baseConnection],
     'RoomShared',
     room
   );
@@ -1117,21 +1103,20 @@ async function main() {
     mineActions: roomAfterWin.decoded.mineActions.toString(),
   };
 
-  const player2Tee = await buildTeeConnectionForSigner(player2);
-  results.states.player2TeeTokenExpiresAt = player2Tee.expiresAt;
-  const player2TeeProvider = new anchor.AnchorProvider(
-    player2Tee.connection,
+  const player2ErProvider = new anchor.AnchorProvider(
+    erConnection,
     new anchor.Wallet(player2),
     {
       commitment: COMMITMENT,
       preflightCommitment: COMMITMENT,
     }
   );
-  const player2TeeProgram = new anchor.Program(idl, player2TeeProvider);
+  const player2ErProgram = new anchor.Program(idl, player2ErProvider);
 
-  const finalizeWinTransaction = await player2TeeProgram.methods
+  const finalizeWinTransaction = await player2ErProgram.methods
     .finalizeWin()
     .accounts({
+      payer: creatorPk,
       winner: player2Pk,
       room,
       vault,
@@ -1142,20 +1127,21 @@ async function main() {
       magicContext: MAGIC_CONTEXT,
     })
     .transaction();
-  const finalizeSignature = await sendErTransaction(
-    player2Tee.connection,
-    finalizeWinTransaction,
-    [player2]
-  );
+  finalizeWinTransaction.feePayer = creatorPk;
+  const finalizeSignature = await sendErTransaction(erConnection, finalizeWinTransaction, [
+    creator,
+    player2,
+  ]);
   results.signatures.finalizeWin = finalizeSignature;
   console.log('finalize_win tx:', finalizeSignature);
 
   await expectFailure(
     'replay finalize_win after finalized',
     async () => {
-      const transaction = await player2TeeProgram.methods
+      const transaction = await player2ErProgram.methods
         .finalizeWin()
         .accounts({
+          payer: creatorPk,
           winner: player2Pk,
           room,
           vault,
@@ -1166,35 +1152,18 @@ async function main() {
           magicContext: MAGIC_CONTEXT,
         })
         .transaction();
-      return sendErTransaction(player2Tee.connection, transaction, [player2]);
+      transaction.feePayer = creatorPk;
+      return sendErTransaction(erConnection, transaction, [creator, player2]);
     },
     results.negativeTests
   );
 
   const finalizeTx =
-    (await maybeFetchTx(player2Tee.connection, finalizeSignature)) ||
-    (await maybeFetchTx(creatorTee.connection, finalizeSignature)) ||
     (await maybeFetchTx(erConnection, finalizeSignature)) ||
     (await maybeFetchTx(baseConnection, finalizeSignature));
   const finalizeFee = finalizeTx?.meta?.fee || 0;
 
-  await waitForCondition('finalized status + escrow zero', POLL_TIMEOUT_MS, 3000, async () => {
-    try {
-      const roomNow = await fetchAndDecodeAny(
-        erProgramCreator,
-        [baseConnection, player2Tee.connection, creatorTee.connection, erConnection],
-        'RoomShared',
-        room
-      );
-      const statusNow = enumKey(roomNow.decoded.status);
-      if (statusNow === 'finalized' && roomNow.decoded.totalEscrowLamports.toString() === '0') {
-        return roomNow;
-      }
-      return null;
-    } catch (_error) {
-      return null;
-    }
-  });
+  await sleep(3000);
 
   const targetAccounts = [
     {
@@ -1238,18 +1207,32 @@ async function main() {
   ];
 
   let postFinalizeOwners = {};
-  for (const account of targetAccounts) {
-    const owner = await getOwner(baseConnection, account.pubkey);
-    postFinalizeOwners[account.name] = owner?.toBase58() || null;
-  }
+  const undelegationDeadline = Date.now() + Math.max(POLL_TIMEOUT_MS, 120_000);
+  let undelegationAttempt = 0;
+  while (true) {
+    postFinalizeOwners = {};
+    for (const account of targetAccounts) {
+      const owner = await getOwner(baseConnection, account.pubkey);
+      postFinalizeOwners[account.name] = owner?.toBase58() || null;
+    }
 
-  const stillDelegated = targetAccounts.filter(
-    (account) => postFinalizeOwners[account.name] === DELEGATION_PROGRAM.toBase58()
-  );
+    const stillDelegated = targetAccounts.filter(
+      (account) => postFinalizeOwners[account.name] === DELEGATION_PROGRAM.toBase58()
+    );
+    if (stillDelegated.length === 0) {
+      break;
+    }
+    if (Date.now() > undelegationDeadline) {
+      throw new Error(
+        `Timed out waiting for undelegation; still delegated: ${stillDelegated
+          .map((item) => item.name)
+          .join(', ')}`
+      );
+    }
 
-  if (stillDelegated.length > 0) {
+    undelegationAttempt += 1;
     console.log(
-      'Processing undelegation for accounts still delegated:',
+      `Processing undelegation attempt #${undelegationAttempt} for:`,
       stillDelegated.map((item) => item.name).join(', ')
     );
     for (const account of stillDelegated) {
@@ -1263,24 +1246,35 @@ async function main() {
             systemProgram: SystemProgram.programId,
           })
           .rpc();
-        results.signatures[`processUndelegation_${account.name}`] = processUndelegationSignature;
+        results.signatures[`processUndelegation_${account.name}_attempt${undelegationAttempt}`] =
+          processUndelegationSignature;
       } catch (error) {
         const parsed = formatError(error);
         results.notes.push(
-          `process_undelegation failed for ${account.name}: ${parsed.message}`
+          `process_undelegation attempt ${undelegationAttempt} failed for ${account.name}: ${parsed.message}`
         );
       }
     }
-
     await sleep(5000);
-    postFinalizeOwners = {};
-    for (const account of targetAccounts) {
-      const owner = await getOwner(baseConnection, account.pubkey);
-      postFinalizeOwners[account.name] = owner?.toBase58() || null;
-    }
   }
 
   results.ownerChecks.afterFinalize = postFinalizeOwners;
+
+  const settleWinPayoutSignature = await baseProgramPlayer2.methods
+    .settleWinPayout()
+    .accounts({
+      winner: player2Pk,
+      room,
+      vault,
+    })
+    .rpc();
+  results.signatures.settleWinPayout = settleWinPayoutSignature;
+  console.log('settle_win_payout tx:', settleWinPayoutSignature);
+
+  const settleTx =
+    (await maybeFetchTx(baseConnection, settleWinPayoutSignature)) ||
+    (await maybeFetchTx(erConnection, settleWinPayoutSignature));
+  const settleFee = settleTx?.meta?.fee || 0;
 
   const roomFinal = await fetchAndDecodeAny(
     baseProgramCreator,
@@ -1293,7 +1287,7 @@ async function main() {
   const winnerBalanceAfter = await baseConnection.getBalance(player2Pk, COMMITMENT);
 
   const payoutLamports = Number(roomBeforeFinalize.decoded.totalEscrowLamports.toString());
-  const winnerNetReceived = winnerBalanceAfter - winnerBalanceBefore + finalizeFee;
+  const winnerNetReceived = winnerBalanceAfter - winnerBalanceBefore + finalizeFee + settleFee;
 
   assertOrThrow(
     enumKey(roomFinal.decoded.status) === 'finalized',
@@ -1311,6 +1305,7 @@ async function main() {
     winnerBalanceBefore,
     winnerBalanceAfter,
     finalizeFeeLamports: finalizeFee,
+    settleFeeLamports: settleFee,
     winnerNetReceived,
     vaultLamportsBefore: vaultBeforeFinalize.lamports,
     vaultLamportsAfter: vaultFinal.lamports,

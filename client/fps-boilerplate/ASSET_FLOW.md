@@ -33,7 +33,7 @@ PROJECT/client/fps-boilerplate/
    - `public/models/platformer/`
    - `public/models/props/`
 4a. For full third-party model packs that should remain unmodified, mirror the pack under a dedicated vendor path:
-   - `public/models/<vendor-pack>/...` (for example `public/models/cube-world/...`)
+   - `public/models/<vendor-pack>/...` (for example `public/models/cube-world/...` or `public/models/kenney-survival/...`)
 5. If the GLB references external textures (for example `Textures/colormap.png`), copy that texture folder relative to the model path:
    - `public/models/platformer/Textures/colormap.png`
    - `public/models/characters/Textures/colormap.png`
@@ -70,8 +70,12 @@ Each map JSON stores:
 - Runtime loads assets and maps only from `public/` URLs.
 - Runtime resolves public URLs against `import.meta.env.BASE_URL` so `/game/`-style hosted paths work without root-absolute URL breakage.
 - `src/runtime/mapRuntime.js` owns template mapping, manifest normalization, and world/hitbox application.
+- Camera-space first-person tool assets (for example the runtime pickaxe viewmodel) may apply local material overrides for close-up readability, including preserved mesh self-occlusion (`depthTest=true`, `depthWrite=false`) plus linear+mipmapped texture sampling.
+- Mine targeting includes a shader-based white hover overlay on the aimed block's entire visible mesh, driven from center-camera raycast in `src/main.js` and rendered by `src/runtime/voxelRuntime.js` (with mine patch instanced-mesh fallback and tagged stone-rock mesh targets when voxel-stream data is absent).
 - Template `primitive-plane` is generated in runtime code (no external GLB), and includes a collider volume.
-- Template `cube-world-ground` is also generated in runtime code and builds a contiguous cube-world block grid with a dedicated mesh-collider child, including a stone/rock `16x16x8` mine patch (from stone source geometry) with preserved top-height and flush tile alignment (no visible seams).
+- Template `cube-world-ground` is also generated in runtime code and builds a contiguous cube-world block grid with explicit instanced per-block colliders (grass + mine-patch ore), plus a hidden patch-local bedrock bounds collider at mine depth limit, including a deterministic mixed-ore `16x16x8` mine patch (stone/coal/diamond/purple-ore source geometry) with preserved top-height and flush tile alignment (no visible seams).
+- Mine traversal support is collider-driven: mining removes the target instance and its collider together, so the next lower remaining block becomes the new support surface (no synthetic mine-column ground offset path).
+- Runtime block aliases include `cube-world-block-{grass,stone,dirt,coal,diamond,purple-ore}`; the mine patch variant selector is deterministic per patch voxel.
 - Additional Cube World environment template aliases exposed by runtime:
   - `cube-world-tree-{1,2,3}`
   - `cube-world-rock-{1,2}`
@@ -80,8 +84,10 @@ Each map JSON stores:
   - `cube-world-sugarcane` (mapped to `Environment/glTF/Bamboo.gltf`)
   - `cube-world-flowers-{1,2}`
   - `cube-world-grass-{small,big}`
-- Current default map manifest targets `cube-world-ground` for a playable base with a stone/rock mine patch baked into the procedural template.
-- Current default map manifest also places curated Cube World vegetation + prop clusters (trees, rocks, mushrooms, fences, sugarcane/bamboo, flowers, grass).
+- Additional Kenney Survival environment template aliases exposed by runtime:
+  - `kenney-survival-rock-{a,b,c}` (mapped to `GLB format/rock-{a,b,c}.glb`)
+- Current default map manifest targets `cube-world-ground` for a playable base with a mixed-ore mine patch baked into the procedural template.
+- Current default map manifest also places curated Cube World vegetation + prop clusters (trees, rocks, mushrooms, fences, sugarcane/bamboo, flowers, grass), plus Kenney Survival perimeter rocks (`rock-a`, `rock-b`, `rock-c`) outside the mine fence ring, including an outer tree belt and a dynamic dispersed mountain field generated from a smoothed noise heightmap with openings, built from mixed stone/dirt/grass cube block templates (grass top, dirt middle, stone base) plus mountain-top trees on selected peaks.
 - Cube World world-object templates (`cube-world-*`) preserve original authored textures, including procedural `cube-world-ground` cube instances sourced from Cube World block materials.
 - Biome stylization pass applies only to `block-grass*` and `primitive-plane`; stylization exclusions include `demo-scene`, `character-male-a`, and `blocky-character-*` templates.
 - Template `demo-scene` loads `/models/maps/demo-scene/Demo.gltf` and injects an explicit `mapCollider` ground volume in runtime.
@@ -93,6 +99,7 @@ Each map JSON stores:
 - Prefer GLB over OBJ/FBX for runtime web loading.
 - Keep world tiles `receiveShadow: true`, `castShadow: false` by default.
 - Cap renderer pixel ratio (`Math.min(devicePixelRatio, 2)`).
+- Default runtime visual profile keeps the post stack in clean mode (render pass only; no bloom/FXAA/grade) to preserve authored texture readability.
 - Use one-time load + clone for repeated template instances.
 - Avoid very large texture maps unless visually required.
 
@@ -108,6 +115,7 @@ Each map JSON stores:
 - `public/models/platformer/Textures/colormap.png`
 - `public/models/characters/Textures/colormap.png`
 - `public/models/cube-world/**` (full `Cube World - Aug 2023` source mirror: `glTF`, `FBX`, `OBJ`, `Blends`, plus `Atlas.png`, `Blocks_PixelArt.png`, and `Preview.jpg`)
+- `public/models/kenney-survival/**` (full `kenney_survival` source mirror: `GLB format`, `FBX format`, `OBJ format`, and `Textures`)
 - `public/models/maps/demo-scene/Demo.gltf` (+ `Demo.bin`, `Atlas.jpg`, `colormap.jpg`, `texture-h.jpg`)
   - Note: this map asset is sanitized for Three.js loader compatibility (invalid skin bindings removed from static animal meshes).
 - `public/ui/kenney-ui-pack-pixel-adventure/**`

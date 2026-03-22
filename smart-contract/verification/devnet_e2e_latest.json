@@ -1,0 +1,209 @@
+{
+  "timestamp": "2026-03-22T17:12:42.026Z",
+  "config": {
+    "baseRpc": "https://api.devnet.solana.com",
+    "erRpc": "https://devnet.magicblock.app/",
+    "teeRpc": "https://tee.magicblock.app",
+    "delegationValidator": null,
+    "stakeLamports": 50000000,
+    "sessionTopupLamports": 2000000,
+    "creatorKeyPath": null,
+    "player2KeyPath": null
+  },
+  "programId": "4b2q3K4cgr1P8FkjbcQ8nssDxLb9dhdVgVtrknvn5igJ",
+  "actors": {
+    "funder": "7QA5Gqmq2CWdu585eQFqN2BobwzBWuYhuPMHih1t12bJ",
+    "creator": "5rrYjxjQ5h2YNWU6qSv8ho684P7u1ewrVX8G5yWqHVsB",
+    "player2": "3hCjM5RcL98hGcR9unN3iLvJEWhgqmkGnjbHz8x9rnN5",
+    "sessionSigner": "7n7wGYU27EoviWXZo9s6WEQrvmjVpoTRtcwDbQ1M4eFp"
+  },
+  "pdas": {
+    "room": "3cbSGRUqmX4rKH2pttVDRzieW7Satb519YpQgtWW7wPW",
+    "vault": "BXvCi2q7mYZZKeXjgCxCrtjnZPtnSSNGxLn3R2EQGsSt",
+    "winnerState": "HVNCNwpd2iifSWvfEPCYjVcyGPLRMYM4a41gkrt5Fmvi",
+    "playerOneReveal": "ButZaj6seALwrLm2HSGP1uhENx9SxKDMWiKwKQhVEu3X",
+    "playerTwoReveal": "EeiotHEe2hLGz1tn9v29K3cGJpWp8STZywMPApjp8q9B",
+    "bufferRoom": "36SKuULBCTX4p2wUFkvQUKb23S3ZyYjuYGqzp3SNxLa9",
+    "bufferVault": "1FK5PFHFDum7McJXkK3LQ3qQqH8jZVtrrcq3LbEZtxA",
+    "bufferWinnerState": "Esh2YVqnBaAGcQi79yYSh5MKmw6fCtZNVnUQgE2ex1tr",
+    "bufferPlayerOneReveal": "8cXrjoJWgaGGRYRPnzZqUDLQQEmCQZtVUkLMQPGhL6Bi",
+    "bufferPlayerTwoReveal": "AeECPGvVckRh3zsmeykq31ntqcvwiQtDZUBjtVBqc7rL",
+    "sessionToken": "7Z9hkp8Vzw7iQKPgoWhSJnpTMNgh3juos26hAPTGKo9w"
+  },
+  "signatures": {
+    "fundCreator": "2LeaaohMWwwkRX6kmjytd1Mx61NiUVJuXYdFuNrtgejUGXDTWnEn6cMWpQemFujvca4Yv7ZQiVrWctgGGy3M91Sb",
+    "fundPlayer2": "2RjK7E8Uz6ahgTbRfM3e2tYaTNzBJUQLYug6frj8rAkz91ZyfKXFuK3wQYPDoQGrHbM4zXBkvpxiCEEQgPyJxHU3",
+    "createRoom": "3jkZnjd1prsy1jMDPu48bRj2Q1qjndo9XnT5oLWAZG8Kyh16ftXrg6PqkJpSsh4MnzmghumQUz3WA3HqA9d5dPPK",
+    "joinRoom": "65FGWHXFMwPb35UAKsNgfGo6pnL6f2C4iJQ1fgmyXvxKEd5JwNucQD6jzGx9WtafaREokf7v2fdBYq5AkV8TkSKy",
+    "delegatePrivateState": "2UE5sDeGU79kT6RigUVTJ1BrZmbQebwBnRti9VzRvcsZZ2tWKhHEJbxubHxLvTrCdyKTJe92M2tQD4BbuXMiyS1n",
+    "requestWinnerVrf": "2voP6zWGba55E16rRNPYYawRMsbg6FShzKHWnQUgA1rfN6T6v5PyPLSy6SUBNAyjaPMf5Hb1MFf4iHyuMamdJqjQ",
+    "createSession": "5cKqpmJy4n4akKukaQaFjt5gGrBwKGzopEoncZMYUk18WSVSsPqAiLYs6sV9pMW4uwy2hhtbjNNaDuBBrn3X2DL9",
+    "mineSessionOne": "66G5BPSuSFhkTWFSQN6HwSR4SKxDzwSqbc4dvKYrVgbzy4TExuzxq7EKseFpCs5AS4inYvVeqFGkE5BJUs5SDCMC",
+    "mineSessionTwo": "3TzEpFMn3aCYwUtdTG5h16ZZzRkrnVVmpuKCsxJzih5eTwhDa18yXRaegPKNvJb17sqYCaKznmrrpirxA4R4KPtZ",
+    "createExpiredSession": "3txANm8ov9Cyx9BSDyLk6ZwZy9WYzjQwCcE8pyRUpSH6g7uw1VnSxRbxa56ggLfhUoCRx6aJ77EgNgPXFSY3JZck",
+    "mineWinningCell": "5p3u4kDXhcZu9fN2kvpfN5h99ez1TmEJr2w8D4ZPxDTz2wPqDdqCNDX4VcykybKY8J4znWwapjMGFC5LPgfc8VKv",
+    "finalizeWin": "XhJG89EFEePM4GAu7X5FZaMz3jXEHuoDVgsD7dPHDN12jkHQCxzKHzJRxAfhsQhrEWqS6jmHpFmTTmhCzEAJYem",
+    "settleWinPayout": "Q8xdzyf5KmEsVmSsA5svvdjJpBiRuaogzuXwJ8S6h3vzMrJ76zwCk9FinGsVs5F1mNTcBLYDX4xnzknesHyXqh8"
+  },
+  "states": {
+    "afterCreate": {
+      "status": "waitingForOpponent",
+      "totalEscrowLamports": "50000000"
+    },
+    "afterJoin": {
+      "status": "waitingForVrf",
+      "playerTwo": "3hCjM5RcL98hGcR9unN3iLvJEWhgqmkGnjbHz8x9rnN5",
+      "totalEscrowLamports": "100000000"
+    },
+    "teeIntegrity": {
+      "endpoint": "https://tee.magicblock.app",
+      "ok": true
+    },
+    "startupSlots": {
+      "erSlot": 285686607,
+      "baseSlot": 450288113
+    },
+    "afterVrf": {
+      "status": "active",
+      "vrfRequested": true,
+      "vrfFulfilled": true,
+      "winnerCell": [
+        3,
+        2,
+        15
+      ],
+      "observedOn": "https://devnet.magicblock.app/"
+    },
+    "exposedLayerCheck": {
+      "y": 1,
+      "status": "passed"
+    },
+    "session": {
+      "authority": "3hCjM5RcL98hGcR9unN3iLvJEWhgqmkGnjbHz8x9rnN5",
+      "validUntil": 1774201374
+    },
+    "fogAfterMineOne": {
+      "caller": "player2",
+      "mineCoord": [
+        0,
+        2,
+        0
+      ],
+      "playerOneChangedBits": 0,
+      "playerTwoChangedBits": 4
+    },
+    "afterWin": {
+      "status": "won",
+      "winner": "3hCjM5RcL98hGcR9unN3iLvJEWhgqmkGnjbHz8x9rnN5",
+      "mineActions": "3"
+    },
+    "afterFinalize": {
+      "status": "finalized",
+      "totalEscrowLamports": "0",
+      "payoutLamports": 100000000,
+      "winnerBalanceBefore": 339453480,
+      "winnerBalanceAfter": 439448480,
+      "finalizeFeeLamports": 0,
+      "settleFeeLamports": 5000,
+      "winnerNetReceived": 100000000,
+      "vaultLamportsBefore": 101176240,
+      "vaultLamportsAfter": 1176240
+    }
+  },
+  "ownerChecks": {
+    "afterDelegate": {
+      "room": "DELeGGvXpWV2fqJUhqcF5ZSYMS4JTLjteaAMARRSaeSh",
+      "vault": "DELeGGvXpWV2fqJUhqcF5ZSYMS4JTLjteaAMARRSaeSh",
+      "winnerState": "DELeGGvXpWV2fqJUhqcF5ZSYMS4JTLjteaAMARRSaeSh",
+      "playerOneReveal": "DELeGGvXpWV2fqJUhqcF5ZSYMS4JTLjteaAMARRSaeSh",
+      "playerTwoReveal": "DELeGGvXpWV2fqJUhqcF5ZSYMS4JTLjteaAMARRSaeSh"
+    },
+    "afterFinalize": {
+      "room": "4b2q3K4cgr1P8FkjbcQ8nssDxLb9dhdVgVtrknvn5igJ",
+      "vault": "4b2q3K4cgr1P8FkjbcQ8nssDxLb9dhdVgVtrknvn5igJ",
+      "winnerState": "4b2q3K4cgr1P8FkjbcQ8nssDxLb9dhdVgVtrknvn5igJ",
+      "playerOneReveal": "4b2q3K4cgr1P8FkjbcQ8nssDxLb9dhdVgVtrknvn5igJ",
+      "playerTwoReveal": "4b2q3K4cgr1P8FkjbcQ8nssDxLb9dhdVgVtrknvn5igJ"
+    }
+  },
+  "negativeTests": [
+    {
+      "label": "invalid coords mine(16,2,0)",
+      "outcome": "expected_failure",
+      "signature": null,
+      "message": "ER transaction failed: {\"InstructionError\":[0,{\"Custom\":6006}]}; signature=46djAwjTVDpZSfeC1HgU2e5Ynv7231sKvEuks7evQkgexJUrpNe4xFamidzAWLQtVKC6bnx88aLYDWebPAr96Fkm; logs=[\"Program 4b2q3K4cgr1P8FkjbcQ8nssDxLb9dhdVgVtrknvn5igJ invoke [1]\",\"Program log: Instruction: Mine\",\"Program log: AnchorError thrown in programs/mine-duel/src/lib.rs:1131. Error Code: InvalidCoordinate. Error Number: 6006. Error Message: Invalid coordinate..\",\"Program 4b2q3K4cgr1P8FkjbcQ8nssDxLb9dhdVgVtrknvn5igJ consumed 13769 of 200000 compute units\",\"Program 4b2q3K4cgr1P8FkjbcQ8nssDxLb9dhdVgVtrknvn5igJ failed: custom program error: 0x1776\"]",
+      "logs": []
+    },
+    {
+      "label": "duplicate mine on already mined coord",
+      "outcome": "expected_failure",
+      "signature": null,
+      "message": "ER transaction failed: {\"InstructionError\":[0,{\"Custom\":6007}]}; signature=2rkh6TeKYFR3gzichYao7tLeSsbeTHWudWBgZ53JFBrj1PLAqE6WpFfmR9VNfyxLbNPYqKmqhPMG7jUPYiXMDJY3; logs=[\"Program 4b2q3K4cgr1P8FkjbcQ8nssDxLb9dhdVgVtrknvn5igJ invoke [1]\",\"Program log: Instruction: Mine\",\"Program log: AnchorError thrown in programs/mine-duel/src/lib.rs:466. Error Code: CellAlreadyMined. Error Number: 6007. Error Message: Cell was already mined..\",\"Program 4b2q3K4cgr1P8FkjbcQ8nssDxLb9dhdVgVtrknvn5igJ consumed 13791 of 200000 compute units\",\"Program 4b2q3K4cgr1P8FkjbcQ8nssDxLb9dhdVgVtrknvn5igJ failed: custom program error: 0x1777\"]",
+      "logs": []
+    },
+    {
+      "label": "unauthorized session token usage by creator payer",
+      "outcome": "expected_failure",
+      "signature": null,
+      "message": "ER transaction failed: {\"InstructionError\":[0,{\"Custom\":6010}]}; signature=24R92PYtB1x8nqYGGszPe3bu5mQWHn2YWHTY2h2y8Lubqgz8jTY8MarEN8puvD6VJi3g9hhuH7aGSzZAhSpePFS1; logs=[\"Program 4b2q3K4cgr1P8FkjbcQ8nssDxLb9dhdVgVtrknvn5igJ invoke [1]\",\"Program log: Instruction: Mine\",\"Program log: AnchorError thrown in programs/mine-duel/src/lib.rs:1082. Error Code: InvalidSessionToken. Error Number: 6010. Error Message: Invalid or expired session token..\",\"Program log: Left:\",\"Program log: 9m2Jv8kGNMDZYSi6pRKAGQpFcWUYsX2XjBNg4YvDp15M\",\"Program log: Right:\",\"Program log: 7Z9hkp8Vzw7iQKPgoWhSJnpTMNgh3juos26hAPTGKo9w\",\"Program 4b2q3K4cgr1P8FkjbcQ8nssDxLb9dhdVgVtrknvn5igJ consumed 17051 of 200000 compute units\",\"Program 4b2q3K4cgr1P8FkjbcQ8nssDxLb9dhdVgVtrknvn5igJ failed: custom program error: 0x177a\"]",
+      "logs": []
+    },
+    {
+      "label": "expired session token rejected",
+      "outcome": "expected_failure",
+      "signature": null,
+      "message": "ER transaction failed: {\"InstructionError\":[0,{\"Custom\":6010}]}; signature=5VKCYWhamQTw1nYysHVG8qkEmEEPA3hC64iTT1kqgUy2xE3R3VH8ianVSyLc9pS4qHM2NCJCHaymDKdbGewFXmpV; logs=[\"Program 4b2q3K4cgr1P8FkjbcQ8nssDxLb9dhdVgVtrknvn5igJ invoke [1]\",\"Program log: Instruction: Mine\",\"Program log: AnchorError thrown in programs/mine-duel/src/lib.rs:1089. Error Code: InvalidSessionToken. Error Number: 6010. Error Message: Invalid or expired session token..\",\"Program 4b2q3K4cgr1P8FkjbcQ8nssDxLb9dhdVgVtrknvn5igJ consumed 15239 of 200000 compute units\",\"Program 4b2q3K4cgr1P8FkjbcQ8nssDxLb9dhdVgVtrknvn5igJ failed: custom program error: 0x177a\"]",
+      "logs": []
+    },
+    {
+      "label": "wrong routing endpoint (base RPC for delegated mine)",
+      "outcome": "expected_failure",
+      "signature": null,
+      "message": "The given account is owned by a different program than expected",
+      "logs": [
+        "Program 4b2q3K4cgr1P8FkjbcQ8nssDxLb9dhdVgVtrknvn5igJ invoke [1]",
+        "Program log: Instruction: Mine",
+        "Program log: AnchorError caused by account: room. Error Code: AccountOwnedByWrongProgram. Error Number: 3007. Error Message: The given account is owned by a different program than expected.",
+        "Program log: Left:",
+        "Program log: DELeGGvXpWV2fqJUhqcF5ZSYMS4JTLjteaAMARRSaeSh",
+        "Program log: Right:",
+        "Program log: 4b2q3K4cgr1P8FkjbcQ8nssDxLb9dhdVgVtrknvn5igJ",
+        "Program 4b2q3K4cgr1P8FkjbcQ8nssDxLb9dhdVgVtrknvn5igJ consumed 4172 of 200000 compute units",
+        "Program 4b2q3K4cgr1P8FkjbcQ8nssDxLb9dhdVgVtrknvn5igJ failed: custom program error: 0xbbf"
+      ]
+    },
+    {
+      "label": "invalid VRF signer consume_winner_vrf direct call",
+      "outcome": "expected_failure",
+      "signature": null,
+      "message": "ER transaction failed: {\"InstructionError\":[0,{\"Custom\":2012}]}; signature=3WbXwTpyaGjZRUsaYuVsGnGQ52wfW2dkm3GZgPmzEF6BJXYHuhxAzdTeJS1SWMuuMFr6Vs1ygTs8jy1UwDhJ1n8D; logs=[\"Program 4b2q3K4cgr1P8FkjbcQ8nssDxLb9dhdVgVtrknvn5igJ invoke [1]\",\"Program log: Instruction: ConsumeWinnerVrf\",\"Program log: AnchorError caused by account: vrf_program_identity. Error Code: ConstraintAddress. Error Number: 2012. Error Message: An address constraint was violated.\",\"Program log: Left:\",\"Program log: 5rrYjxjQ5h2YNWU6qSv8ho684P7u1ewrVX8G5yWqHVsB\",\"Program log: Right:\",\"Program log: 9irBy75QS2BN81FUgXuHcjqceJJRuc9oDkAe8TKVvvAw\",\"Program 4b2q3K4cgr1P8FkjbcQ8nssDxLb9dhdVgVtrknvn5igJ consumed 3894 of 200000 compute units\",\"Program 4b2q3K4cgr1P8FkjbcQ8nssDxLb9dhdVgVtrknvn5igJ failed: custom program error: 0x7dc\"]",
+      "logs": []
+    },
+    {
+      "label": "replay request_winner_vrf after already requested/active",
+      "outcome": "expected_failure",
+      "signature": null,
+      "message": "ER transaction failed: {\"InstructionError\":[0,{\"Custom\":6000}]}; signature=J7psNwpx95xnogdAWKPEL9cuwhZ3dvNa5YXRsVo2ZCfwNZ8W2uHyKpx3CcBTv4itz2ZMpHwVeEyMpLmKbqxqPLr; logs=[\"Program 4b2q3K4cgr1P8FkjbcQ8nssDxLb9dhdVgVtrknvn5igJ invoke [1]\",\"Program log: Instruction: RequestWinnerVrf\",\"Program log: AnchorError thrown in programs/mine-duel/src/lib.rs:374. Error Code: InvalidStatus. Error Number: 6000. Error Message: Invalid status transition for this instruction..\",\"Program 4b2q3K4cgr1P8FkjbcQ8nssDxLb9dhdVgVtrknvn5igJ consumed 8016 of 200000 compute units\",\"Program 4b2q3K4cgr1P8FkjbcQ8nssDxLb9dhdVgVtrknvn5igJ failed: custom program error: 0x1770\"]",
+      "logs": []
+    },
+    {
+      "label": "replay finalize_win after finalized",
+      "outcome": "expected_failure",
+      "signature": null,
+      "message": "ER transaction failed: {\"InstructionError\":[0,{\"Custom\":3007}]}; signature=2RoA1XPL3TcSN8FXLAD1hR12TASkMmAo47xuz4cnHVAH6jZ1T6Qa6mKJ2wTYBZwYB5eDrwYgfmU6AG99UqPyyXZA; logs=[\"Program 4b2q3K4cgr1P8FkjbcQ8nssDxLb9dhdVgVtrknvn5igJ invoke [1]\",\"Program log: Instruction: FinalizeWin\",\"Program log: AnchorError caused by account: room. Error Code: AccountOwnedByWrongProgram. Error Number: 3007. Error Message: The given account is owned by a different program than expected.\",\"Program log: Left:\",\"Program log: DELeGGvXpWV2fqJUhqcF5ZSYMS4JTLjteaAMARRSaeSh\",\"Program log: Right:\",\"Program log: 4b2q3K4cgr1P8FkjbcQ8nssDxLb9dhdVgVtrknvn5igJ\",\"Program 4b2q3K4cgr1P8FkjbcQ8nssDxLb9dhdVgVtrknvn5igJ consumed 5041 of 200000 compute units\",\"Program 4b2q3K4cgr1P8FkjbcQ8nssDxLb9dhdVgVtrknvn5igJ failed: custom program error: 0xbbf\"]",
+      "logs": []
+    }
+  ],
+  "notes": [
+    "process_undelegation attempt 1 failed for room: Simulation failed. \nMessage: Transaction simulation failed: Error processing Instruction 0: missing required signature for instruction. \nLogs: \n[\n  \"Program 4b2q3K4cgr1P8FkjbcQ8nssDxLb9dhdVgVtrknvn5igJ invoke [1]\",\n  \"Program log: Instruction: ProcessUndelegation\",\n  \"Program log: ProgramError occurred. Error Code: MissingRequiredSignature. Error Number: 34359738368. Error Message: A signature was required but not found.\",\n  \"Program 4b2q3K4cgr1P8FkjbcQ8nssDxLb9dhdVgVtrknvn5igJ consumed 3338 of 200000 compute units\",\n  \"Program 4b2q3K4cgr1P8FkjbcQ8nssDxLb9dhdVgVtrknvn5igJ failed: missing required signature for instruction\"\n]. \nCatch the `SendTransactionError` and call `getLogs()` on it for full details.",
+    "process_undelegation attempt 1 failed for vault: Simulation failed. \nMessage: Transaction simulation failed: Error processing Instruction 0: missing required signature for instruction. \nLogs: \n[\n  \"Program 4b2q3K4cgr1P8FkjbcQ8nssDxLb9dhdVgVtrknvn5igJ invoke [1]\",\n  \"Program log: Instruction: ProcessUndelegation\",\n  \"Program log: ProgramError occurred. Error Code: MissingRequiredSignature. Error Number: 34359738368. Error Message: A signature was required but not found.\",\n  \"Program 4b2q3K4cgr1P8FkjbcQ8nssDxLb9dhdVgVtrknvn5igJ consumed 3338 of 200000 compute units\",\n  \"Program 4b2q3K4cgr1P8FkjbcQ8nssDxLb9dhdVgVtrknvn5igJ failed: missing required signature for instruction\"\n]. \nCatch the `SendTransactionError` and call `getLogs()` on it for full details.",
+    "process_undelegation attempt 1 failed for winnerState: Simulation failed. \nMessage: Transaction simulation failed: Error processing Instruction 0: missing required signature for instruction. \nLogs: \n[\n  \"Program 4b2q3K4cgr1P8FkjbcQ8nssDxLb9dhdVgVtrknvn5igJ invoke [1]\",\n  \"Program log: Instruction: ProcessUndelegation\",\n  \"Program log: ProgramError occurred. Error Code: MissingRequiredSignature. Error Number: 34359738368. Error Message: A signature was required but not found.\",\n  \"Program 4b2q3K4cgr1P8FkjbcQ8nssDxLb9dhdVgVtrknvn5igJ consumed 3338 of 200000 compute units\",\n  \"Program 4b2q3K4cgr1P8FkjbcQ8nssDxLb9dhdVgVtrknvn5igJ failed: missing required signature for instruction\"\n]. \nCatch the `SendTransactionError` and call `getLogs()` on it for full details.",
+    "process_undelegation attempt 1 failed for playerOneReveal: Simulation failed. \nMessage: Transaction simulation failed: Error processing Instruction 0: missing required signature for instruction. \nLogs: \n[\n  \"Program 4b2q3K4cgr1P8FkjbcQ8nssDxLb9dhdVgVtrknvn5igJ invoke [1]\",\n  \"Program log: Instruction: ProcessUndelegation\",\n  \"Program log: ProgramError occurred. Error Code: MissingRequiredSignature. Error Number: 34359738368. Error Message: A signature was required but not found.\",\n  \"Program 4b2q3K4cgr1P8FkjbcQ8nssDxLb9dhdVgVtrknvn5igJ consumed 3504 of 200000 compute units\",\n  \"Program 4b2q3K4cgr1P8FkjbcQ8nssDxLb9dhdVgVtrknvn5igJ failed: missing required signature for instruction\"\n]. \nCatch the `SendTransactionError` and call `getLogs()` on it for full details.",
+    "process_undelegation attempt 1 failed for playerTwoReveal: Simulation failed. \nMessage: Transaction simulation failed: Error processing Instruction 0: missing required signature for instruction. \nLogs: \n[\n  \"Program 4b2q3K4cgr1P8FkjbcQ8nssDxLb9dhdVgVtrknvn5igJ invoke [1]\",\n  \"Program log: Instruction: ProcessUndelegation\",\n  \"Program log: ProgramError occurred. Error Code: MissingRequiredSignature. Error Number: 34359738368. Error Message: A signature was required but not found.\",\n  \"Program 4b2q3K4cgr1P8FkjbcQ8nssDxLb9dhdVgVtrknvn5igJ consumed 3504 of 200000 compute units\",\n  \"Program 4b2q3K4cgr1P8FkjbcQ8nssDxLb9dhdVgVtrknvn5igJ failed: missing required signature for instruction\"\n]. \nCatch the `SendTransactionError` and call `getLogs()` on it for full details.",
+    "process_undelegation attempt 2 failed for room: Simulation failed. \nMessage: Transaction simulation failed: Error processing Instruction 0: missing required signature for instruction. \nLogs: \n[\n  \"Program 4b2q3K4cgr1P8FkjbcQ8nssDxLb9dhdVgVtrknvn5igJ invoke [1]\",\n  \"Program log: Instruction: ProcessUndelegation\",\n  \"Program log: ProgramError occurred. Error Code: MissingRequiredSignature. Error Number: 34359738368. Error Message: A signature was required but not found.\",\n  \"Program 4b2q3K4cgr1P8FkjbcQ8nssDxLb9dhdVgVtrknvn5igJ consumed 3338 of 200000 compute units\",\n  \"Program 4b2q3K4cgr1P8FkjbcQ8nssDxLb9dhdVgVtrknvn5igJ failed: missing required signature for instruction\"\n]. \nCatch the `SendTransactionError` and call `getLogs()` on it for full details.",
+    "process_undelegation attempt 2 failed for vault: Simulation failed. \nMessage: Transaction simulation failed: Error processing Instruction 0: missing required signature for instruction. \nLogs: \n[\n  \"Program 4b2q3K4cgr1P8FkjbcQ8nssDxLb9dhdVgVtrknvn5igJ invoke [1]\",\n  \"Program log: Instruction: ProcessUndelegation\",\n  \"Program log: ProgramError occurred. Error Code: MissingRequiredSignature. Error Number: 34359738368. Error Message: A signature was required but not found.\",\n  \"Program 4b2q3K4cgr1P8FkjbcQ8nssDxLb9dhdVgVtrknvn5igJ consumed 3338 of 200000 compute units\",\n  \"Program 4b2q3K4cgr1P8FkjbcQ8nssDxLb9dhdVgVtrknvn5igJ failed: missing required signature for instruction\"\n]. \nCatch the `SendTransactionError` and call `getLogs()` on it for full details.",
+    "process_undelegation attempt 2 failed for winnerState: Simulation failed. \nMessage: Transaction simulation failed: Error processing Instruction 0: missing required signature for instruction. \nLogs: \n[\n  \"Program 4b2q3K4cgr1P8FkjbcQ8nssDxLb9dhdVgVtrknvn5igJ invoke [1]\",\n  \"Program log: Instruction: ProcessUndelegation\",\n  \"Program log: ProgramError occurred. Error Code: MissingRequiredSignature. Error Number: 34359738368. Error Message: A signature was required but not found.\",\n  \"Program 4b2q3K4cgr1P8FkjbcQ8nssDxLb9dhdVgVtrknvn5igJ consumed 3338 of 200000 compute units\",\n  \"Program 4b2q3K4cgr1P8FkjbcQ8nssDxLb9dhdVgVtrknvn5igJ failed: missing required signature for instruction\"\n]. \nCatch the `SendTransactionError` and call `getLogs()` on it for full details.",
+    "process_undelegation attempt 2 failed for playerOneReveal: Simulation failed. \nMessage: Transaction simulation failed: Error processing Instruction 0: missing required signature for instruction. \nLogs: \n[\n  \"Program 4b2q3K4cgr1P8FkjbcQ8nssDxLb9dhdVgVtrknvn5igJ invoke [1]\",\n  \"Program log: Instruction: ProcessUndelegation\",\n  \"Program log: ProgramError occurred. Error Code: MissingRequiredSignature. Error Number: 34359738368. Error Message: A signature was required but not found.\",\n  \"Program 4b2q3K4cgr1P8FkjbcQ8nssDxLb9dhdVgVtrknvn5igJ consumed 3504 of 200000 compute units\",\n  \"Program 4b2q3K4cgr1P8FkjbcQ8nssDxLb9dhdVgVtrknvn5igJ failed: missing required signature for instruction\"\n]. \nCatch the `SendTransactionError` and call `getLogs()` on it for full details.",
+    "process_undelegation attempt 2 failed for playerTwoReveal: Simulation failed. \nMessage: Transaction simulation failed: Error processing Instruction 0: missing required signature for instruction. \nLogs: \n[\n  \"Program 4b2q3K4cgr1P8FkjbcQ8nssDxLb9dhdVgVtrknvn5igJ invoke [1]\",\n  \"Program log: Instruction: ProcessUndelegation\",\n  \"Program log: ProgramError occurred. Error Code: MissingRequiredSignature. Error Number: 34359738368. Error Message: A signature was required but not found.\",\n  \"Program 4b2q3K4cgr1P8FkjbcQ8nssDxLb9dhdVgVtrknvn5igJ consumed 3504 of 200000 compute units\",\n  \"Program 4b2q3K4cgr1P8FkjbcQ8nssDxLb9dhdVgVtrknvn5igJ failed: missing required signature for instruction\"\n]. \nCatch the `SendTransactionError` and call `getLogs()` on it for full details."
+  ]
+}

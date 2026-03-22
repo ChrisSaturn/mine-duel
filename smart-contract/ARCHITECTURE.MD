@@ -27,7 +27,7 @@ Last updated: 2026-03-22
 ### `VaultEscrow` (escrow lamports)
 - PDA: `["vault", room]`
 - Holds stake deposits from both players.
-- Payout occurs in `finalize_win` (winner receives `total_escrow_lamports`).
+- Payout occurs in `settle_win_payout` on base layer after commit+undelegate.
 
 ### `WinnerState` (private match core state)
 - PDA: `["winner", room]`
@@ -71,9 +71,11 @@ Last updated: 2026-03-22
   - Updates non-sensitive checkpoint fields on shared room state.
   - Commits shared state to base layer from ER.
 - `finalize_win()`
-  - Winner-only final settlement.
-  - Transfers escrow amount to winner.
-  - Commit + undelegate path for final state.
+  - Winner-authorized, ER-routed commit + undelegate trigger.
+  - Schedules return of delegated state to base layer.
+- `settle_win_payout()`
+  - Base-layer winner settlement after ownership is restored.
+  - Transfers escrow amount to winner and sets status to `Finalized`.
 
 ## 4) Transaction Routing Contract
 
@@ -88,6 +90,12 @@ Last updated: 2026-03-22
   - `mine`
   - `commit_checkpoint`
   - `finalize_win`
+- Base-layer post-finalization instruction:
+  - `settle_win_payout`
+
+Routing note:
+- Canonical gameplay write lane is ER router (`https://devnet.magicblock.app/`).
+- TEE RPC is retained for integrity/auth diagnostics and confidential access checks, not the default gameplay write lane.
 
 ## 5) Security Controls in V1
 
@@ -107,3 +115,4 @@ Last updated: 2026-03-22
 - No post-join timeout/recovery path.
 - Checkpoint commits are hash/metadata focused, while private reveal/winner internals stay in delegated private state.
 - Delegating all 5 private-state accounts in one instruction requires elevated compute budget on the client tx (the default 200k CU is insufficient on devnet).
+- Final settlement is intentionally two-phase (`finalize_win` on ER, then `settle_win_payout` on base) to avoid writable-account conflicts during active delegation ownership transitions.

@@ -327,6 +327,12 @@ export function mountLobby({ walletGateway, onEnterGame, initialSelectedModelPat
           <p class="lobby-status" id="lobby-status" aria-live="polite"></p>
 
           <button
+            class="lobby-action-btn lobby-action-btn--secondary"
+            id="lobby-create-room-btn"
+            type="button"
+          ><span class="lobby-btn-label">Create Room</span></button>
+
+          <button
             class="lobby-action-btn lobby-action-btn--primary"
             id="lobby-enter-btn"
             type="button"
@@ -334,11 +340,82 @@ export function mountLobby({ walletGateway, onEnterGame, initialSelectedModelPat
           ><span class="lobby-btn-label">Enter Game</span></button>
         </div>
       </footer>
+
+      <div
+        class="lobby-room-overlay"
+        id="lobby-create-room-overlay"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="lobby-create-room-title"
+        hidden
+      >
+        <button
+          class="lobby-room-overlay-backdrop"
+          id="lobby-create-room-backdrop"
+          type="button"
+          aria-label="Close create room overlay"
+        ></button>
+
+        <section class="lobby-room-overlay-panel" aria-describedby="lobby-create-room-note">
+          <header class="lobby-room-overlay-header">
+            <div>
+              <p class="lobby-room-overlay-kicker">Lobby</p>
+              <h2 class="lobby-room-overlay-title" id="lobby-create-room-title">Create Room</h2>
+            </div>
+            <button
+              class="lobby-room-overlay-close"
+              id="lobby-create-room-close-btn"
+              type="button"
+              aria-label="Close create room overlay"
+            >X</button>
+          </header>
+
+          <form class="lobby-room-form" id="lobby-create-room-form">
+            <div class="lobby-room-grid">
+              <label class="lobby-room-field" for="lobby-room-stake">
+                <span class="lobby-room-label">Stake (SOL)</span>
+                <input
+                  class="lobby-room-input"
+                  id="lobby-room-stake"
+                  name="stakeSol"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value="0.05"
+                />
+              </label>
+            </div>
+
+            <p class="lobby-room-note" id="lobby-create-room-note">
+              Protocol supports stake-only room creation right now. No map/private/spectator/code options.
+            </p>
+
+            <div class="lobby-room-meta" aria-hidden="true">
+              <p class="lobby-room-meta-line">You deposit the stake when creating the room.</p>
+              <p class="lobby-room-meta-line">Opponent matches the same stake when joining.</p>
+            </div>
+
+            <div class="lobby-room-actions">
+              <button
+                class="lobby-action-btn lobby-action-btn--secondary"
+                id="lobby-create-room-cancel-btn"
+                type="button"
+              ><span class="lobby-btn-label">Cancel</span></button>
+              <button
+                class="lobby-action-btn lobby-action-btn--primary"
+                id="lobby-create-room-confirm-btn"
+                type="submit"
+              ><span class="lobby-btn-label">Create Room</span></button>
+            </div>
+          </form>
+        </section>
+      </div>
     </div>
   `;
 
   const connectBtn = /** @type {HTMLButtonElement} */ (root.querySelector('#lobby-connect-btn'));
   const disconnectBtn = /** @type {HTMLButtonElement} */ (root.querySelector('#lobby-disconnect-btn'));
+  const createRoomBtn = /** @type {HTMLButtonElement} */ (root.querySelector('#lobby-create-room-btn'));
   const enterBtn   = /** @type {HTMLButtonElement} */ (root.querySelector('#lobby-enter-btn'));
   const statusEl   = /** @type {HTMLElement} */       (root.querySelector('#lobby-status'));
   const addressEl  = /** @type {HTMLElement} */       (root.querySelector('#lobby-address'));
@@ -351,10 +428,18 @@ export function mountLobby({ walletGateway, onEnterGame, initialSelectedModelPat
   const stageEl = /** @type {HTMLElement} */           (root.querySelector('#lobby-character-stage'));
   const backgroundVideoEl = /** @type {HTMLVideoElement | null} */ (root.querySelector('#lobby-bg-video'));
   const lobbyScreenEl = /** @type {HTMLElement | null} */ (root.querySelector('.lobby-screen'));
+  const createRoomOverlayEl = /** @type {HTMLElement | null} */ (root.querySelector('#lobby-create-room-overlay'));
+  const createRoomBackdropBtn = /** @type {HTMLButtonElement | null} */ (root.querySelector('#lobby-create-room-backdrop'));
+  const createRoomCloseBtn = /** @type {HTMLButtonElement | null} */ (root.querySelector('#lobby-create-room-close-btn'));
+  const createRoomCancelBtn = /** @type {HTMLButtonElement | null} */ (root.querySelector('#lobby-create-room-cancel-btn'));
+  const createRoomConfirmBtn = /** @type {HTMLButtonElement | null} */ (root.querySelector('#lobby-create-room-confirm-btn'));
+  const createRoomFormEl = /** @type {HTMLFormElement | null} */ (root.querySelector('#lobby-create-room-form'));
+  const createRoomStakeInputEl = /** @type {HTMLInputElement | null} */ (root.querySelector('#lobby-room-stake'));
   /** @type {{ connected: boolean } | null} */
   let lastWalletState = null;
   let solBalanceRequestId = 0;
   let walletMenuOpen = false;
+  let createRoomOverlayOpen = false;
 
   /**
    * @param {boolean} open
@@ -369,6 +454,22 @@ export function mountLobby({ walletGateway, onEnterGame, initialSelectedModelPat
       walletDropdownEl.classList.toggle('is-open', shouldOpen);
     }
     connectBtn.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
+  }
+
+  /**
+   * @param {boolean} open
+   */
+  function setCreateRoomOverlayOpen(open) {
+    const shouldOpen = Boolean(open);
+    createRoomOverlayOpen = shouldOpen;
+    if (createRoomOverlayEl) {
+      createRoomOverlayEl.hidden = !shouldOpen;
+    }
+    root.classList.toggle('lobby-room-overlay-open', shouldOpen);
+    if (shouldOpen) {
+      setWalletMenuOpen(false);
+      createRoomStakeInputEl?.focus();
+    }
   }
 
   /**
@@ -427,7 +528,7 @@ export function mountLobby({ walletGateway, onEnterGame, initialSelectedModelPat
 
   _disposeLobbyClickEffects = setupLobbyClickEffects({
     screenEl: lobbyScreenEl,
-    buttons: [connectBtn, disconnectBtn, enterBtn, skinPrevBtn, skinNextBtn]
+    buttons: [connectBtn, disconnectBtn, createRoomBtn, enterBtn, skinPrevBtn, skinNextBtn, createRoomCloseBtn, createRoomCancelBtn, createRoomConfirmBtn]
   });
 
   skinPrevBtn.addEventListener('click', () => {
@@ -483,6 +584,23 @@ export function mountLobby({ walletGateway, onEnterGame, initialSelectedModelPat
     }
   });
 
+  createRoomBtn.addEventListener('click', () => {
+    setCreateRoomOverlayOpen(true);
+  });
+  createRoomBackdropBtn?.addEventListener('click', () => {
+    setCreateRoomOverlayOpen(false);
+  });
+  createRoomCloseBtn?.addEventListener('click', () => {
+    setCreateRoomOverlayOpen(false);
+  });
+  createRoomCancelBtn?.addEventListener('click', () => {
+    setCreateRoomOverlayOpen(false);
+  });
+  createRoomFormEl?.addEventListener('submit', (event) => {
+    event.preventDefault();
+    setCreateRoomOverlayOpen(false);
+  });
+
   const onWindowClick = (event) => {
     if (!walletMenuOpen) return;
     if (!walletDropdownEl) return;
@@ -492,6 +610,10 @@ export function mountLobby({ walletGateway, onEnterGame, initialSelectedModelPat
   };
   const onWindowKeyDown = (event) => {
     if (event.key === 'Escape') {
+      if (createRoomOverlayOpen) {
+        setCreateRoomOverlayOpen(false);
+        return;
+      }
       setWalletMenuOpen(false);
     }
   };
@@ -500,6 +622,7 @@ export function mountLobby({ walletGateway, onEnterGame, initialSelectedModelPat
   _disposeLobbyWalletMenu = () => {
     window.removeEventListener('click', onWindowClick);
     window.removeEventListener('keydown', onWindowKeyDown);
+    setCreateRoomOverlayOpen(false);
     setWalletMenuOpen(false);
   };
 

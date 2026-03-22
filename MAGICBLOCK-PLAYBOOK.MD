@@ -382,6 +382,7 @@ Related architecture docs:
 - `mine`
 - `commit_checkpoint`
 - `finalize_win`
+- `settle_win_payout`
 
 ### 8.4 Routing policy for Mine Duel
 
@@ -389,8 +390,9 @@ Related architecture docs:
 | --- | --- |
 | `create_room` / `cancel_room_prejoin` / `join_room` | Base layer RPC |
 | `delegate_private_state` | Base layer RPC |
-| `request_winner_vrf` / `consume_winner_vrf` | Private ER / TEE endpoint |
-| `mine` / `commit_checkpoint` / `finalize_win` | Private ER / TEE endpoint |
+| `request_winner_vrf` / `consume_winner_vrf` | ER Router (`https://devnet.magicblock.app/`) |
+| `mine` / `commit_checkpoint` / `finalize_win` | ER Router (`https://devnet.magicblock.app/`) |
+| `settle_win_payout` | Base layer RPC (after ownership returns from delegation) |
 
 ### 8.5 Session + privacy policy
 
@@ -400,3 +402,30 @@ Related architecture docs:
   - token expiry.
 - Without a token, signer must be the authority.
 - Winner location is only set after VRF callback and is kept in private delegated state.
+
+### 8.6 Latest Full Devnet E2E (2026-03-22 UTC)
+
+Program + deploy:
+- Program id: `4b2q3K4cgr1P8FkjbcQ8nssDxLb9dhdVgVtrknvn5igJ`
+- Latest successful deploy: `FxxPi53ZeCbZW4i5RTKtHocTQpdARN3Cx53nut3BMzynMvdivnGXK4o3cyNyQWUkyz4y1jX85qkbJCmcTmoQNEg`
+
+Primary signatures:
+- `create_room`: `3jkZnjd1prsy1jMDPu48bRj2Q1qjndo9XnT5oLWAZG8Kyh16ftXrg6PqkJpSsh4MnzmghumQUz3WA3HqA9d5dPPK`
+- `join_room`: `65FGWHXFMwPb35UAKsNgfGo6pnL6f2C4iJQ1fgmyXvxKEd5JwNucQD6jzGx9WtafaREokf7v2fdBYq5AkV8TkSKy`
+- `delegate_private_state`: `2UE5sDeGU79kT6RigUVTJ1BrZmbQebwBnRti9VzRvcsZZ2tWKhHEJbxubHxLvTrCdyKTJe92M2tQD4BbuXMiyS1n`
+- `request_winner_vrf`: `2voP6zWGba55E16rRNPYYawRMsbg6FShzKHWnQUgA1rfN6T6v5PyPLSy6SUBNAyjaPMf5Hb1MFf4iHyuMamdJqjQ`
+- `mine` (first two): `66G5BPSuSFhkTWFSQN6HwSR4SKxDzwSqbc4dvKYrVgbzy4TExuzxq7EKseFpCs5AS4inYvVeqFGkE5BJUs5SDCMC`, `3TzEpFMn3aCYwUtdTG5h16ZZzRkrnVVmpuKCsxJzih5eTwhDa18yXRaegPKNvJb17sqYCaKznmrrpirxA4R4KPtZ`
+- winning mine: `5p3u4kDXhcZu9fN2kvpfN5h99ez1TmEJr2w8D4ZPxDTz2wPqDdqCNDX4VcykybKY8J4znWwapjMGFC5LPgfc8VKv`
+- `finalize_win`: `XhJG89EFEePM4GAu7X5FZaMz3jXEHuoDVgsD7dPHDN12jkHQCxzKHzJRxAfhsQhrEWqS6jmHpFmTTmhCzEAJYem`
+- `settle_win_payout`: `Q8xdzyf5KmEsVmSsA5svvdjJpBiRuaogzuXwJ8S6h3vzMrJ76zwCk9FinGsVs5F1mNTcBLYDX4xnzknesHyXqh8`
+
+Observed state transitions:
+- `WaitingForOpponent -> WaitingForVrf -> Active -> Won -> Finalized`
+
+Owner checks:
+- After delegate: room/vault/winner/reveal owners were all `DELeGGvXpWV2fqJUhqcF5ZSYMS4JTLjteaAMARRSaeSh`.
+- After finalize + settlement: those owners returned to `4b2q3K4cgr1P8FkjbcQ8nssDxLb9dhdVgVtrknvn5igJ`.
+
+Routing notes:
+- Startup lane heads in the passing run: `erSlot=285686607`, `baseSlot=450288113` (expected lane divergence).
+- TEE endpoint was attested (`verifyTeeRpcIntegrity=true`) but gameplay writes were routed through ER router, not direct TEE RPC.

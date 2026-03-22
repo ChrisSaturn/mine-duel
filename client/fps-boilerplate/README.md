@@ -7,14 +7,18 @@ This is the active client prototype in the workspace, not the final production c
 ## Runtime Overview
 
 - World/camera/hitboxes are loaded from `public/maps/default-map.v1.json`.
-- The default map uses procedural `cube-world-ground` as a block-array base environment with a stone/rock `16x16x8` mine patch whose top surface stays aligned with the surrounding terrain and tiles flush (no seam gaps).
+- The default map uses procedural `cube-world-ground` as a block-array base environment with a deterministic mixed-ore `16x16x8` mine patch (stone, coal, diamond, purple ore) whose top surface stays aligned with the surrounding terrain and tiles flush (no seam gaps).
+- The default map now layers environment occlusion beyond the mine perimeter with an additional outer tree ring (`outer-tree-*`) and a dispersed mountain field (`mountain-ring-*`) generated from a noise-driven, smoothed heightmap (Minecraft-style silhouette) that keeps long-distance breakup without reading as a continuous enclosure.
 - The default world `biomeLighting` is now `peak` for a lighter/friendlier daytime look (higher-key atmosphere + softer grade/bloom).
 - Runtime map loading + application lives in `src/runtime/mapRuntime.js`.
 - Map manifests may define `biomeLighting` (`peak`, `forest`, `desert`, `snow`, `island`) to drive `/game` mood colors across atmosphere, block shading, and post-process.
 - Runtime asset URLs are resolved through `import.meta.env.BASE_URL` so hosted subpaths (for example `/game/`) still load maps/models correctly.
 - Dev-only editor tooling lives in `src/dev/editorBootstrap.js` and is dynamically imported only in dev mode.
-- Player runtime collision uses a capsule-style body resolver (horizontal body blocking + ground probe snap).
+- Player runtime collision + grounding now live entirely in `src/runtime/firstPersonControllerRuntime.js` (capsule-style horizontal blocking, ground probe snap, jump/gravity integration, and spawn reset flow).
 - Runtime object collision now prefers explicit template colliders (`userData.mapCollider=true`) and otherwise uses implicit per-mesh colliders for world elements (with box-bounds fallback only when no mesh is available).
+- Procedural `cube-world-ground` now uses explicit per-block instanced mesh colliders (grass + mine patch ore), so mining a block removes both its visual instance and its collider, letting the block below become the next support surface.
+- Synthetic mine-column grounding has been removed; mine traversal support now comes from real block colliders only.
+- A hidden patch-local bedrock bounds collider is placed at mine depth limit to prevent void falls when a column is fully mined out.
 - Map manifest supports `spawnPreset` (`position`, `yaw`) and runtime spawn/reset now use it, so player spawn stays inside authored map space.
 - Runtime + editor player preview default to `Kenney Blocky Characters` (`/models/characters/kenney-blocky/character-a.glb`).
 - Lobby view now renders a dedicated 3D character preview stage with left/right skin arrows (`character-a` through `character-r` under `public/models/characters/kenney-blocky/`), and the selected skin is used as the runtime player model when entering game.
@@ -25,6 +29,8 @@ This is the active client prototype in the workspace, not the final production c
 - Lobby skin selector arrows now render as literal `<` and `>` glyphs, and their arrow boxes use a glassmorphism treatment (blurred translucent surface + soft highlights) to better match the stage overlay aesthetic.
 - Lobby root now mounts `public/background.mp4` as a full-viewport background video (`autoplay`, `loop`, `playsinline`) with audio left on (`muted=false`), bottom-aligned framing, slight vertical stretch for composition, plus a first-interaction playback retry fallback for browsers that block audible autoplay.
 - Lobby flow is wallet-first in the new layout: `Connect Wallet` is in the top-right menu chip, and the primary CTA label switches between `CONNECT WALLET` (disconnected) and `ENTER GAME` (connected).
+- Lobby footer now includes a `Create Room` CTA that submits on-chain `create_room(stake_lamports)` and returns a room-code handle from chain (one-room-per-creator rule).
+- `Enter Game` and join flow are room-code-driven and require the target room-code + wallet; no global room browser is used.
 - Connected-wallet controls now use a top-right dropdown: clicking the wallet chip while connected opens a menu with `Disconnect`, while disconnected click behavior still starts `connect()`.
 - Wallet disconnect flow is gateway-driven and immediate: on disconnect request, UI state flips out of connected instantly and all connected adapters are asked to disconnect to prevent stale `Wallet connected` labels.
 - Gateway now ignores late wallet `connect` events after a manual disconnect until the next explicit `connect()` call, preventing stale address/SOL-balance rebound after disconnect.
@@ -37,12 +43,19 @@ This is the active client prototype in the workspace, not the final production c
 - Lobby footer event card shows `BLITZ V2` with `MAGICBLOCK` subtitle, while the primary `Enter Game` CTA remains the main footer action.
 - Lobby character stage/canvas height is increased across desktop/tablet/mobile breakpoints so the bottom character shadow renders fully in preview.
 - In-game HUD styling (`src/style.css`) now follows the Lobby UI visual language (shared palette/tokens, pixel card gradients, chip-style wallet controls, lobby-colored sprint bar, and updated pointer-lock instruction card), while preserving existing HUD IDs/runtime logic.
+- In-game HUD now includes a default bottom-right notification bopper (`#notification-bopper`) with lobby-aligned styling, queued runtime alerts, tone states (`info`, `success`, `warning`, `danger`), and game-route-only display.
 - Runtime player model uses a slower, extra-aggressive procedural walk-cycle limb animation while moving on ground (arm/leg swing amplitudes doubled to `+/-40` with a forward-biased `-30` arm center, and `+/-60` legs).
-- Runtime camera uses live runtime-head local anchoring (sampled each frame from head world position into rig-local space) and runtime head pitch follows the same look state for visual parity.
-- Runtime camera anchor now uses live runtime-head local X/Z + vertical/crouch/head-bob offsets, with default forward offset `0`, so first-person body placement stays inside the capsule without cached-anchor artifacts.
+- Runtime camera anchor now keeps local `X` fixed and samples the bind/rebind anchor from head-mesh world bounds (higher eye-height ratio), with fallback to head-node origin when bounds are unavailable, preserving stable first-person eye placement while preventing yaw-induced lateral drift.
+- Runtime camera sampled `Z` anchor is clamped to the capsule envelope (`~45%` of collider radius), preventing camera placement outside the player pill.
+- Runtime first-person camera local `Z` also enforces a forward-placement safety floor (`max(0.18, 40% of collider radius)`), preventing torso/arm near-plane projection in front of view on larger scaled avatars.
+- Runtime first-person camera uses scale-independent comfort offsets (`cameraHeadVerticalOffset = 0.1`, `cameraHeadForwardOffset = 0.12`) and a full-body down-look cap of `75°` (applied after map camera presets), so the player can see torso/legs in first-person without shifting to third-person framing.
 - Runtime player model keeps native GLTF yaw orientation at load (no forced `Y=PI` flip), which avoids head-anchor inversion that can place the body in front of camera.
-- Runtime map camera presets now enforce a downward pitch floor of `-85°` (`pitchMin >= -1.48353`) so players cannot look fully down into their own body mesh.
-- Local runtime player model remains visible during gameplay while head occluder meshes are hidden for first-person clarity; editor mode still hides the runtime player model.
+- Runtime map camera presets still enforce a pitch floor of `-85°` (`pitchMin >= -1.48353`) so camera tilt cannot exceed near-vertical upward extremes.
+- Local runtime player model is now hidden during gameplay and editor mode to keep pure camera-only first-person rendering.
+- Runtime first-person tool viewmodel now loads Kenney Survival `GLB format/tool-pickaxe.glb` and attaches it to camera space with a camera-space cloned right-arm holder (Minecraft-style in-hand view), with gameplay-only visibility (hidden in editor), decoupled scale (`tool-root/arm` stays at `0.22` while pickaxe renders at world-scale `1.0`), preserved arm handedness/orientation from the source rig (no arm-axis mirroring), a more outward resting tool rotation, and a faster extra-aggressive mine animation with a larger up-then-down strike arc, stronger impact jitter, emissive energy pulse, and stronger idle sway.
+- First-person pickaxe viewmodel materials now preserve self-occlusion (`depthTest=true`, `depthWrite=false`) and enforce linear+mipmapped texture sampling with anisotropy so the in-hand atlas renders smoothly at close camera distance.
+- Mine-break debris particles now launch with stronger spread/speed, heavier spin, lower drag, longer hang-time, and larger chunk sizes so the floating breakup reads more aggressive during block destruction.
+- Mine hover targeting now drives a shader-based white full-face overlay across the entire currently aimed stone/ore block in the mine area (`src/runtime/voxelRuntime.js`), with frame-level camera raycast in `src/main.js` and fallback targeting from mine patch instanced meshes when voxel-stream data is unavailable.
 - Atmosphere runtime (`src/runtime/atmosphereRuntime.js`) now drives a PEAK-inspired sky model (cinematic warm horizon, cool zenith, layered clouds, and top-locked gameplay sun lighting/fog/exposure, without an in-view sun orb).
 - Rendering now uses post-processing (`src/runtime/postProcessRuntime.js`) with highlight bloom + cinematic color grading + FXAA through `EffectComposer`.
 - Shared biome style presets now live in `src/runtime/blockworldStyleRuntime.js`, and are consumed by map/atmosphere/voxel/post runtimes.
@@ -70,17 +83,23 @@ This is the active client prototype in the workspace, not the final production c
 - `VITE_SOLANA_RPC_URL` (optional explicit RPC URL override)
 - Workspace default profile sets `VITE_SOLANA_RPC_URL` to a Helius devnet endpoint in local `.env.local`.
 
-### Managed PER Runtime Environment Variables
+### Serverless Gameplay Runtime Environment Variables
 
-- `VITE_ENABLE_MANAGED_PER` (`1` to enable managed PER runtime mode)
-- `VITE_PER_RUNTIME_URL` (explicit managed runtime base URL)
-- `VITE_WORLD_PROFILE_ID` (optional profile override used by stream setup)
-- `VITE_MINE_DUEL_PROGRAM_ID` (optional on-chain program override used by stream setup)
-- Legacy compatibility keys remain accepted during migration:
-  - `VITE_ENABLE_WORLD_STREAM_GATEWAY`
-  - `VITE_WORLD_STREAM_GATEWAY_URL`
-- If neither current nor legacy variables are set, realtime runtime stays disabled.
-- Runtime setup path uses real devnet setup transactions (`init_player_context`, `open_er_lease`) prepared by the managed runtime and submitted after wallet signing.
+- `VITE_MINE_DUEL_PROGRAM_ID` (`4b2q3K4cgr1P8FkjbcQ8nssDxLb9dhdVgVtrknvn5igJ` on this workspace)
+- `VITE_SOLANA_NETWORK` (`devnet` | `testnet` | `mainnet-beta`, default `devnet`)
+- `VITE_SOLANA_RPC_URL` (optional explicit base RPC for chain reads/writes; must support websocket subscriptions for room/reveal updates)
+- `VITE_ER_RPC_URL` (optional explicit ER RPC/rollup router URL for session-key mining instructions).
+- Optional debug-only migration keys (not used by the default gameplay path): `VITE_ENABLE_MANAGED_PER`, `VITE_PER_RUNTIME_URL`, `VITE_WORLD_PROFILE_ID`, `VITE_ENABLE_WORLD_STREAM_GATEWAY`, `VITE_WORLD_STREAM_GATEWAY_URL`.
+- Gameplay is two-phase on finalization: `finalize_win` on ER schedules undelegation, then `settle_win_payout` is submitted on base when writable ownership returns.
+
+### Gameplay Architecture (v1)
+
+- Canonical room states: `Lobby` -> `WaitingForOpponent` -> `WaitingForVrf` -> `Active` -> `Won` -> `Finalized` -> `PayoutSettled`.
+- Base (L1) runtime writes: `create_room` / `cancel_room_prejoin` / `join_room` / `delegate_private_state` / `settle_win_payout`.
+- ER/runtime writes: `request_winner_vrf` / `mine` / `finalize_win` / `process_undelegation` / `consume_winner_vrf`.
+- Session keys are auto-managed in client: create when entering `Active`, sign repeated `mine` only with session signer, refresh/revoke around room exit and settlement.
+- Room discovery is room-code-only and uses creator-owned single-PDA naming; there is no room-browser list in client v1.
+- Match completion is two-step payout: `finalize_win` commits + undelegation, then base-layer `settle_win_payout` drains escrow and confirms final payout.
 
 ### Solana Runtime Playbook
 
@@ -126,6 +145,8 @@ Available only when running with `VITE_ENABLE_EDITOR=1`.
 - Displays controls summary
 - Includes a real-time FPS counter
 - Uses Lobby-aligned styling for the gameplay HUD shell, wallet controls, crosshair glow treatment, sprint bar, and pointer-lock instruction overlay
+- Includes a bottom-right notification bopper for gameplay runtime events (wallet transitions, routing state, and settlement/failure notices)
+- Includes a match end visual overlay (winner/loser card) with a 3-2-1 countdown before returning to lobby
 - Shows a centered Minecraft-style crosshair during active pointer-lock gameplay
 - Shows a stamina sprint bar near the bottom-center that scales/fades based on sprint remaining
 - Uses `Minecraft.ttf` loaded from `public/fonts/minecraft.ttf`
@@ -133,32 +154,31 @@ Available only when running with `VITE_ENABLE_EDITOR=1`.
 ## Visual Pipeline
 
 - Atmosphere:
-  - Sky dome shader now blends PEAK-style gradients (cool top, warm horizon, deep nadir), layered cloud noise, and biome-specific day/sunset/night palettes.
+  - Sky dome shader blends biome gradients with layered clouds, but gameplay lighting is now day-locked for stable, clean asset presentation.
   - Sky dome radius is tuned to the runtime clip/fog envelope to avoid visible dome-edge circles in gameplay view.
-  - Sun direction now stays locked high in the sky during gameplay (with slow overhead azimuth drift), keeping lighting bright while preserving the current sky dome/skybox visuals.
-  - Fog near/far and fog color now shift through day/sunset/night palettes for stronger depth separation.
+  - Sun direction stays fixed high in the sky and no longer cycles through sunset/night in default runtime.
+  - Fog is pushed far back to avoid washing out asset colors in near/mid gameplay space.
 - Illumination:
-  - Renderer runs `ACESFilmicToneMapping` with physically-correct light behavior and dynamic exposure from atmosphere runtime.
-  - Lighting stack uses a warm directional sun, cool sky hemisphere, biome-tinted ground bounce, and ambient fill; shadows stay colored (no neutral/black collapse).
-  - Sun, hemisphere, ambient, and bounce colors/intensities blend in real time across day/sunset/night states for cinematic readability.
+  - Renderer now uses `NoToneMapping` for faithful authored texture colors.
+  - Lighting stack keeps physically-correct lights but is tuned for stable daylight readability over cinematic day/night shifts.
 - Shadows:
-  - Directional shadows stay on `PCFSoftShadowMap` but now use tighter PEAK-style tuning (softer penumbra, stronger normal-bias protection, and cleaner acne control).
+  - Directional shadows now use `PCFShadowMap` with reduced softness to keep silhouettes cleaner.
   - Shadow frustum scales by viewport and now uses texel-snapped focus anchoring around the player to reduce crawl/shimmer while moving.
   - Shadow map resolution now scales by viewport class (`4096` desktop / `2048` compact viewport) for cleaner distant silhouettes.
 - Blockworld shading:
   - Voxel runtime now uses `MeshLambertMaterial` and per-face color weighting so top faces read brightest, side faces shift cooler/darker, and bottom faces remain tinted (not black).
   - Voxel geometry applies subtle height-based gradients to keep large surfaces painterly/readable without noisy texture detail.
+  - Mine hover highlight uses a dedicated `ShaderMaterial` expanded white overlay on the entire target mesh (all visible block faces), fed by center-camera mine targeting (voxel raycast + mine instanced-mesh fallback + tagged stone rock meshes) so targeted stone/ore blocks remain clearly readable against mixed ore colors.
   - Cube World world objects (`cube-world-*`, including procedural `cube-world-ground` instances built from Cube World block materials) now preserve original authored textures.
   - Stylized biome recolor pass is scoped to `block-grass*` and `primitive-plane`; character templates (`character-male-a`, `blocky-character-*`) and `demo-scene` remain excluded.
 - Post-processing:
-  - `EffectComposer` render path uses `RenderPass`, `UnrealBloomPass`, a PEAK grade pass (contrast/saturation/warmth/shadow-lift/vignette/grain), and `FXAAShader`.
-  - Grade/bloom tuning now derives from the active map `biomeLighting` preset.
-  - Post-processing resizes with the viewport and supports both gameplay camera and editor camera.
+  - Default runtime keeps only the `RenderPass` path (bloom/FXAA/grade disabled) for a cleaner, less stylized look.
+  - Post-processing runtime still supports style controls but they are no-ops under clean catalog mode.
 
 ## Controller Feature Notes
 
 - First-person controller alignment notes: [`FIRST_PERSON_CONTROLLER_ALIGNMENT.md`](./FIRST_PERSON_CONTROLLER_ALIGNMENT.md)
-- Modular first-person runtime controller now lives in `src/runtime/firstPersonControllerRuntime.js` and is consumed by `src/main.js` for look/zoom/sprint/crouch/head-bob/movement state flow.
+- Modular first-person runtime controller now lives in `src/runtime/firstPersonControllerRuntime.js` and is consumed by `src/main.js` for look/zoom/sprint/crouch/head-bob plus fixed-step physics/collision/jump/spawn flow.
 - Unity 6 parity reference for full first-person behavior porting: [`DIGGERS_UNITY6_FIRST_PERSON_CONTROLLER_REFERENCE.md`](./DIGGERS_UNITY6_FIRST_PERSON_CONTROLLER_REFERENCE.md)
 - First-person camera architecture (yaw/pitch axis split, head-bob joint, dynamic FOV priority): [`DIGGERS_UNITY6_FIRST_PERSON_CONTROLLER_REFERENCE.md#camera-system`](./DIGGERS_UNITY6_FIRST_PERSON_CONTROLLER_REFERENCE.md#camera-system)
 
@@ -170,6 +190,7 @@ Available only when running with `VITE_ENABLE_EDITOR=1`.
 ## Imported Packs (2026-03-22)
 
 - `Kenney Blocky Characters` imported under `public/models/characters/kenney-blocky/`
+- `Kenney Survival` imported under `public/models/kenney-survival/` as a full source mirror (`GLB format`, `FBX format`, `OBJ format`, and `Textures`)
 - `Kenney UI Pack - Pixel Adventure` imported under `public/ui/kenney-ui-pack-pixel-adventure/`
 - `Cube World - Aug 2023` imported under `public/models/cube-world/` as a full source mirror (`Animals`, `Blocks`, `Characters`, `Enemies`, `Environment`, `Pixel Blocks`, `Tools` with `glTF`, `FBX`, `OBJ`, and `Blends` subfolders)
 - `Minecraft.ttf` imported as `public/fonts/minecraft.ttf`
@@ -178,7 +199,8 @@ Available only when running with `VITE_ENABLE_EDITOR=1`.
 - `src/runtime/mapRuntime.js` also exposes:
   - `primitive-plane` (legacy simple generated base area)
   - `cube-world-block-grass` (single cube-world grass block template)
-  - `cube-world-ground` (contiguous cube grid with a dedicated mesh-collider child and a stone/rock `16x16x8` mine patch using the stone source mesh geometry)
+  - `cube-world-block-{stone,dirt,coal,diamond,purple-ore}` (Cube World block template aliases used by the procedural mine patch + mountain belt)
+  - `cube-world-ground` (contiguous cube grid with deterministic mixed-ore `16x16x8` mine patch using stone/coal/diamond/purple-ore source meshes, explicit instanced per-block colliders for grass + ore, and a hidden patch-local bedrock floor collider at depth limit)
   - Cube World environment props:
     - `cube-world-tree-{1,2,3}`
     - `cube-world-rock-{1,2}`
@@ -187,8 +209,12 @@ Available only when running with `VITE_ENABLE_EDITOR=1`.
     - `cube-world-sugarcane` (mapped to Cube World bamboo for reed-like vegetation)
     - `cube-world-flowers-{1,2}`
     - `cube-world-grass-{small,big}`
+  - Kenney Survival environment props:
+    - `kenney-survival-rock-{a,b,c}`
   - `demo-scene` (imported environment glTF with a runtime-generated ground collider)
-- `public/maps/default-map.v1.json` now seeds a populated blockworld biome using Cube World props (trees, rocks, mushrooms, fences, sugarcane/bamboo, flowers, and grass) on top of `cube-world-ground`.
+- `public/maps/default-map.v1.json` now seeds a populated blockworld biome using Cube World props (trees, rocks, mushrooms, fences, sugarcane/bamboo, flowers, and grass) plus Kenney Survival perimeter rocks (`rock-a`, `rock-b`, `rock-c`) on top of `cube-world-ground`.
+- Mine-zone dressing now centers around the mixed-ore `16x16x8` patch (the patch itself is centered in the `cube-world-ground` tile field): a perimeter fence ring (raised by `+1` world unit) with four wide gate openings and snapped segment spacing so fence pieces connect cleanly, plus denser tree/grass/rock/mushroom scatter positioned outside the patch bounds and offset away from fence pieces to avoid clipping.
+- A second tree belt now runs outside the existing mine-tree ring, and the mountain field is generated from a smoothed noise heightmap with intentional openings/dispersion; visible block layering is strict (grass top, dirt middle, stone bottom), and selected high peaks receive mountain-top trees (`mountain-top-tree-*`).
 - `client/demo-scene/` is treated as the source asset drop and mirrored into `public/models/maps/demo-scene/` for runtime serving
 
 ## Run

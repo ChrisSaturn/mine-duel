@@ -545,8 +545,12 @@ export type MineDuel = {
       ],
       "accounts": [
         {
-          "name": "winner",
+          "name": "payer",
           "writable": true,
+          "signer": true
+        },
+        {
+          "name": "winner",
           "signer": true
         },
         {
@@ -932,7 +936,6 @@ export type MineDuel = {
         },
         {
           "name": "room",
-          "writable": true,
           "pda": {
             "seeds": [
               {
@@ -948,29 +951,6 @@ export type MineDuel = {
                 "kind": "account",
                 "path": "room.creator",
                 "account": "roomShared"
-              }
-            ]
-          }
-        },
-        {
-          "name": "winnerState",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  119,
-                  105,
-                  110,
-                  110,
-                  101,
-                  114
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "room"
               }
             ]
           }
@@ -1019,6 +999,71 @@ export type MineDuel = {
           "type": "u8"
         }
       ]
+    },
+    {
+      "name": "settleWinPayout",
+      "discriminator": [
+        102,
+        188,
+        18,
+        66,
+        35,
+        67,
+        245,
+        203
+      ],
+      "accounts": [
+        {
+          "name": "winner",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "room",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  111,
+                  111,
+                  109
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "room.creator",
+                "account": "roomShared"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "room"
+              }
+            ]
+          }
+        }
+      ],
+      "args": []
     }
   ],
   "accounts": [

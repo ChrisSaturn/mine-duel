@@ -123,13 +123,15 @@ Flow:
 
 1. Mine winner coordinate first.
 2. Verify room status = `Won` and winner pubkey set.
-3. Winner calls `finalize_win()`.
+3. Call `finalize_win()` on ER router (commit + undelegate scheduling).
+4. Wait for delegated account ownership to return from delegation program.
+5. Winner calls `settle_win_payout()` on base RPC.
 
 Expected:
 
-- Winner receives `total_escrow_lamports`.
-- Room status becomes `Finalized`.
-- Commit + undelegate flow executes for room/vault/private state accounts.
+- `finalize_win` succeeds on ER and schedules commit/undelegate.
+- Room/vault/winner/reveal owners return from `DELeGG...` to the game program.
+- `settle_win_payout` transfers full escrow to winner and sets room status to `Finalized`.
 
 ## 10) Negative + Security Cases
 
@@ -145,46 +147,101 @@ Execute and assert failures for:
   - mine before VRF fulfillment
   - finalize before `Won`
 
-## Latest Live Devnet Smoke (Executed 2026-03-22)
+## Latest Full Devnet E2E (Executed 2026-03-22 UTC)
 
 Program:
 - Program ID: `4b2q3K4cgr1P8FkjbcQ8nssDxLb9dhdVgVtrknvn5igJ`
-- Deploy/upgrade signature: `438oW572yf4FN9Qg4u7UgV5obwWTfCUwqRnQquSqWEJ3Kb6uZLSoBYu6dHwnUsy8ZACp9Fs3FtzhczJhijyyHny2`
-- Deployed slot: `450239064`
+- Latest deploy/upgrade signature: `FxxPi53ZeCbZW4i5RTKtHocTQpdARN3Cx53nut3BMzynMvdivnGXK4o3cyNyQWUkyz4y1jX85qkbJCmcTmoQNEg`
 
-Room used for successful smoke:
-- creator: `68wkqQoW6niMuu3W1mM5ivo6PD7HzAfD9LHnkQarsM4J`
-- player2: `2H1wZARcnhqVY5xuMxVzbkchu6aq1CNeFYK46NCexJMU`
-- room PDA: `HbWn871R1UACipCM875Q1SbRMTBGSUKMdCQSsCTNUHi8`
+Run metadata:
+- Output artifact: `smart-contract/verification/devnet_e2e_latest.json`
+- Run timestamp: `2026-03-22T17:12:42.026Z`
+- Startup heads: `erSlot=285686607`, `baseSlot=450288113`
 
-Successful on-chain tx sequence:
+Core tx chain (passing run):
 1. `create_room`  
-   `3D6H1fFqmGAss9pvZFY6z3iBp8qgCqERSCFddhbF5rS9HfLhQFcF58ciboqj4V1dDsEQH6FzhV6oW9t7YcKirSN4`
+   `3jkZnjd1prsy1jMDPu48bRj2Q1qjndo9XnT5oLWAZG8Kyh16ftXrg6PqkJpSsh4MnzmghumQUz3WA3HqA9d5dPPK`
 2. `join_room`  
-   `5GK48q9ZYYNBNHxGK1iJvoP7AzNroFijvW6NCh7bEApniG1rrne9zNE7fHANoWwJ9VednHg6JQgTkXbYKXgcjbtQ`
+   `65FGWHXFMwPb35UAKsNgfGo6pnL6f2C4iJQ1fgmyXvxKEd5JwNucQD6jzGx9WtafaREokf7v2fdBYq5AkV8TkSKy`
 3. `delegate_private_state`  
-   `3UfdMdpCE8EXNPBppYDTrYVEqjyA2QF97E6uBrtcxZqiLPjLJzTetzXRYJYhN3kMRfRJSGSSSMkFXGd99ToJUEWM`
+   `2UE5sDeGU79kT6RigUVTJ1BrZmbQebwBnRti9VzRvcsZZ2tWKhHEJbxubHxLvTrCdyKTJe92M2tQD4BbuXMiyS1n`
+4. `request_winner_vrf`  
+   `2voP6zWGba55E16rRNPYYawRMsbg6FShzKHWnQUgA1rfN6T6v5PyPLSy6SUBNAyjaPMf5Hb1MFf4iHyuMamdJqjQ`
+5. session mines  
+   `66G5BPSuSFhkTWFSQN6HwSR4SKxDzwSqbc4dvKYrVgbzy4TExuzxq7EKseFpCs5AS4inYvVeqFGkE5BJUs5SDCMC`  
+   `3TzEpFMn3aCYwUtdTG5h16ZZzRkrnVVmpuKCsxJzih5eTwhDa18yXRaegPKNvJb17sqYCaKznmrrpirxA4R4KPtZ`
+6. winning mine  
+   `5p3u4kDXhcZu9fN2kvpfN5h99ez1TmEJr2w8D4ZPxDTz2wPqDdqCNDX4VcykybKY8J4znWwapjMGFC5LPgfc8VKv`
+7. `finalize_win`  
+   `XhJG89EFEePM4GAu7X5FZaMz3jXEHuoDVgsD7dPHDN12jkHQCxzKHzJRxAfhsQhrEWqS6jmHpFmTTmhCzEAJYem`
+8. `settle_win_payout`  
+   `Q8xdzyf5KmEsVmSsA5svvdjJpBiRuaogzuXwJ8S6h3vzMrJ76zwCk9FinGsVs5F1mNTcBLYDX4xnzknesHyXqh8`
 
-One-shot fresh-room smoke (all three in one run):
-1. `create_room`  
-   `4F4Z7mNrSVTuw6WJbEgGcjRhw99JMjkDyrE1b42Pxt7xBWkvBq1s12uvvpeYqGSkC2BfeesQymVpJTQxNqr5Bb6v`
-2. `join_room`  
-   `ExcupybfySbFoKXrz9QEH3RetcjQNW4Ns5N8afH2nLJkLHWSpaWSxFKMEZDdVrVfzNBcq4PP1KUEUTHRTxPdm5G`
-3. `delegate_private_state`  
-   `2fmKG5SX9Dv6heDKmvJmXLsLGWpkH8aumkf58WpqGNyKEuzSSfSygFLCU54uXQp8Cv39nmUWffUyws9V3GbgSDEM`
+State transition evidence:
+- `WaitingForOpponent -> WaitingForVrf -> Active -> Won -> Finalized`
+- VRF result in passing run:
+  - `vrfRequested=true`
+  - `vrfFulfilled=true`
+  - winner cell: `[3,2,15]`
 
-One-shot room owner checks:
-- room `36Sha...` owner -> `DELeGGvXpWV2fqJUhqcF5ZSYMS4JTLjteaAMARRSaeSh`
-- vault `HX7Jf...` owner -> `DELeGGvXpWV2fqJUhqcF5ZSYMS4JTLjteaAMARRSaeSh`
+Ownership evidence:
+- After delegate:
+  - room/vault/winner/reveal owners: `DELeGGvXpWV2fqJUhqcF5ZSYMS4JTLjteaAMARRSaeSh`
+- After finalize + settlement:
+  - room/vault/winner/reveal owners: `4b2q3K4cgr1P8FkjbcQ8nssDxLb9dhdVgVtrknvn5igJ`
 
-Delegation verification (`solana account` owner checks):
-- room `HbWn...` owner -> `DELeGGvXpWV2fqJUhqcF5ZSYMS4JTLjteaAMARRSaeSh`
-- vault `Gzc6...` owner -> `DELeGGvXpWV2fqJUhqcF5ZSYMS4JTLjteaAMARRSaeSh`
-- winner `7ZC6...` owner -> `DELeGGvXpWV2fqJUhqcF5ZSYMS4JTLjteaAMARRSaeSh`
-- reveal1 `52hh...` owner -> `DELeGGvXpWV2fqJUhqcF5ZSYMS4JTLjteaAMARRSaeSh`
-- reveal2 `8poy...` owner -> `DELeGGvXpWV2fqJUhqcF5ZSYMS4JTLjteaAMARRSaeSh`
+Settlement evidence:
+- Payout: `100000000` lamports
+- Winner net received (fees-adjusted): `100000000` lamports
+- Vault lamports: `101176240 -> 1176240`
 
-Operational note:
-- `delegate_private_state` for 5 accounts exceeded default `200,000` compute units.
-- Smoke script now sends a compute-budget pre-instruction:
-  - `ComputeBudgetProgram.setComputeUnitLimit({ units: 1_200_000 })`
+Negative/security outcomes (all expected rejections):
+- invalid coordinate -> `Custom:6006`
+- duplicate mine -> `Custom:6007`
+- unauthorized session -> `Custom:6010`
+- expired session -> `Custom:6010`
+- wrong routing endpoint (base RPC on delegated accounts) -> account owner mismatch (`3007`)
+- invalid VRF signer direct callback -> address constraint (`2012`)
+- replay VRF request after active -> invalid status (`6000`)
+- replay finalize on delegated room -> account owner mismatch (`3007`)
+
+Operational notes from this run:
+- Delegation tx still requires elevated CU budget (`1_200_000`).
+- TEE integrity check passed (`verifyTeeRpcIntegrity=true`), but gameplay writes were routed via ER router (`https://devnet.magicblock.app/`).
+- `process_undelegation` helper attempts logged missing required signature during simulation; ownership still returned by commit+undelegate scheduling path and settlement completed.
+
+## Legacy Deploy Rent Reclaim (Executed 2026-03-22)
+
+Discovery summary:
+- Checked upgradeable-program authorities used in this workspace (`~/.config/solana/id.json`, `smart-contract/wallets/deployer.json`, and test wallets).
+- No open upgrade buffer accounts were found for these authorities on devnet.
+- Historical `Anchor.toml` placeholder program id `Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkgPq9G8t6xQ9` does not exist on devnet.
+
+Fee funding step:
+- Sent `0.01 SOL` from deployer authority `7QA5...` to `Fmy...` to cover close fees.
+- Signature: `uMuRU94ESLx2Q3p8PqDXPAbznknudgZMbxyNWYCjTzDH5SzfaatX9YePLf6uZwx47GXVkjwArKtaUkyR8i5N7hz`
+
+Closed legacy programs (authority `Fmy2333qSLZj98Q5k8Hn6vJukiEiJWX1YCMNtvnmNQgX`):
+1. Program `6G9rnzKuQKNnq4irwfGfL7uoswAohb1XD5Hsf4L33Vsk`  
+   ProgramData `D3k4CrbtaoLemGSdLdSxgp5EnoqzQ6rTgckJaCMRGtc8`  
+   Reclaimed `3.7280892 SOL`  
+   Close tx: `5c86SDqzmHUgyZEh9DKhvcvrHP1BRv5mzqExZ7RF6zVC2JZBSDtZWAQTYY6vSEYLZ9o8N3WgiPybEyyDyWKA9yDX`
+2. Program `68DhM4yjATYMMCvNeRndjoxPbo7NzSnaNq1J9diXFucQ`  
+   ProgramData `HC3BR6LmH9eJDBNheeXC6HvDLnoEzcgYLGtBa97YkZ3b`  
+   Reclaimed `5.04620184 SOL`  
+   Close tx: `4AwDRy6X85Cz5fbRE9kffhD2RgTjvfuXTatbbCazc99LBGugK5WSxMeSRZ9nmj2ZCgzYGV2DYwREcFb15RjLSGt9`
+3. Program `HFmWxe7HufHuygGS5j9ZRKdHwZtXdWWz6iDccH6x4VBq`  
+   ProgramData `CN3GA3t2ytfX9n9V2uGwewjGYwvdRKQoq2dLsCUTZe9f`  
+   Reclaimed `4.17397464 SOL`  
+   Close tx: `5LMXJ3Z59kVzfr3YZbK5ZpXV1VnmQzJrrnbyP2wQ4xSDVHDsqRPWGjChpAEzQPiCKW4zdHVRu6Yv4zdqFR5yTd9U`
+
+Total reclaimed from legacy programs: `12.94826568 SOL`.
+
+Post-reclaim state:
+- `Fmy...` balance: `12.95825068 SOL` (includes reclaimed rent and minus tx fees).
+- Deployer `7QA5...` balance: `2.49338496 SOL`.
+- Current active program remains deployed:
+  - `4b2q3K4cgr1P8FkjbcQ8nssDxLb9dhdVgVtrknvn5igJ`
+  - ProgramData `2NmAFHdxrLPuEhegdnpBRpFLTZQtGhGLeNQYMAvZbMMf`
+  - Authority `7QA5Gqmq2CWdu585eQFqN2BobwzBWuYhuPMHih1t12bJ`
+  - Balance `3.5209596 SOL`

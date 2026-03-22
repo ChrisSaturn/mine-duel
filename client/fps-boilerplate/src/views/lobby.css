@@ -26,6 +26,10 @@
   background: #020510;
 }
 
+#lobby.lobby-room-overlay-open {
+  overflow: hidden;
+}
+
 .lobby-bg-video {
   position: absolute;
   inset: 0;
@@ -579,7 +583,7 @@
 
 .lobby-action-stack {
   display: grid;
-  gap: 0.28rem;
+  gap: 0.38rem;
   width: 100%;
 }
 
@@ -635,6 +639,170 @@
   text-align: center;
   font-size: clamp(0.56rem, 0.82vw, 0.7rem);
   line-height: 1.2;
+}
+
+.lobby-room-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 15;
+  display: grid;
+  place-items: center;
+  padding: clamp(0.7rem, 2vw, 1.3rem);
+}
+
+.lobby-room-overlay[hidden] {
+  display: none;
+}
+
+.lobby-room-overlay-backdrop {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  margin: 0;
+  background: rgba(4, 7, 20, 0.7);
+  backdrop-filter: blur(7px);
+  -webkit-backdrop-filter: blur(7px);
+  cursor: pointer;
+}
+
+.lobby-room-overlay-panel {
+  position: relative;
+  z-index: 1;
+  width: min(96vw, 700px);
+  border: 2px solid #080c24;
+  border-radius: 0.36rem;
+  padding: clamp(0.7rem, 1.8vw, 1.15rem);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.11), transparent 35%),
+    linear-gradient(180deg, rgba(58, 70, 127, 0.98) 0%, rgba(26, 34, 81, 0.99) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.2),
+    0 20px 42px rgba(0, 6, 21, 0.56);
+}
+
+.lobby-room-overlay-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.62rem;
+}
+
+.lobby-room-overlay-kicker,
+.lobby-room-overlay-title {
+  margin: 0;
+  text-transform: uppercase;
+  line-height: 1.05;
+}
+
+.lobby-room-overlay-kicker {
+  color: #8fa0d8;
+  font-size: clamp(0.52rem, 0.78vw, 0.66rem);
+}
+
+.lobby-room-overlay-title {
+  color: #f4f8ff;
+  font-size: clamp(0.8rem, 1.14vw, 1.02rem);
+  letter-spacing: 0.04em;
+}
+
+.lobby-room-overlay-close {
+  min-width: 40px;
+  min-height: 40px;
+  border: 2px solid #111a3d;
+  border-radius: 0.22rem;
+  background: linear-gradient(180deg, #5567a5 0%, #2a396f 100%);
+  color: #f7faff;
+  cursor: pointer;
+  font-family: var(--lobby-ui-font);
+  font-size: clamp(0.58rem, 0.84vw, 0.7rem);
+  text-transform: uppercase;
+  line-height: 1;
+}
+
+.lobby-room-overlay-close:hover {
+  filter: brightness(1.06);
+}
+
+.lobby-room-overlay-close:active {
+  transform: translateY(1px);
+}
+
+.lobby-room-form {
+  display: grid;
+  gap: 0.62rem;
+}
+
+.lobby-room-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.lobby-room-field {
+  display: grid;
+  gap: 0.22rem;
+}
+
+.lobby-room-label {
+  color: #8dc6ff;
+  font-size: clamp(0.5rem, 0.72vw, 0.62rem);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.lobby-room-input {
+  width: 100%;
+  min-height: clamp(38px, 5vh, 46px);
+  padding: 0.28rem 0.44rem;
+  border: 2px solid #111a3d;
+  border-radius: 0.24rem;
+  background: linear-gradient(180deg, rgba(85, 103, 165, 0.96) 0%, rgba(42, 57, 111, 0.98) 100%);
+  color: #f7faff;
+  font-family: var(--lobby-ui-font);
+  font-size: clamp(0.56rem, 0.8vw, 0.68rem);
+  text-transform: uppercase;
+}
+
+.lobby-room-input:focus-visible {
+  outline: 2px solid rgba(46, 208, 255, 0.9);
+  outline-offset: 1px;
+}
+
+.lobby-room-note {
+  margin: 0;
+  color: rgba(229, 239, 255, 0.9);
+  font-size: clamp(0.5rem, 0.72vw, 0.62rem);
+  line-height: 1.25;
+  text-transform: uppercase;
+}
+
+.lobby-room-meta {
+  display: grid;
+  gap: 0.18rem;
+  padding: 0.34rem 0.42rem;
+  border: 2px solid #111a3d;
+  border-radius: 0.24rem;
+  background: linear-gradient(180deg, rgba(67, 82, 137, 0.96) 0%, rgba(35, 47, 95, 0.98) 100%);
+}
+
+.lobby-room-meta-line {
+  margin: 0;
+  color: #f7faff;
+  font-size: clamp(0.5rem, 0.7vw, 0.6rem);
+  line-height: 1.25;
+  text-transform: uppercase;
+}
+
+.lobby-room-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.lobby-room-actions .lobby-action-btn {
+  width: 100%;
+  justify-self: stretch;
 }
 
 .lobby-status--error {
@@ -803,6 +971,14 @@
   .lobby-action-stack {
     width: 100%;
     justify-self: stretch;
+  }
+
+  .lobby-room-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .lobby-room-actions {
+    grid-template-columns: 1fr;
   }
 }
 

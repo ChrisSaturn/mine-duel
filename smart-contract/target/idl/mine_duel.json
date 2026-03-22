@@ -539,8 +539,12 @@
       ],
       "accounts": [
         {
-          "name": "winner",
+          "name": "payer",
           "writable": true,
+          "signer": true
+        },
+        {
+          "name": "winner",
           "signer": true
         },
         {
@@ -926,7 +930,6 @@
         },
         {
           "name": "room",
-          "writable": true,
           "pda": {
             "seeds": [
               {
@@ -942,29 +945,6 @@
                 "kind": "account",
                 "path": "room.creator",
                 "account": "RoomShared"
-              }
-            ]
-          }
-        },
-        {
-          "name": "winner_state",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  119,
-                  105,
-                  110,
-                  110,
-                  101,
-                  114
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "room"
               }
             ]
           }
@@ -1013,6 +993,71 @@
           "type": "u8"
         }
       ]
+    },
+    {
+      "name": "settle_win_payout",
+      "discriminator": [
+        102,
+        188,
+        18,
+        66,
+        35,
+        67,
+        245,
+        203
+      ],
+      "accounts": [
+        {
+          "name": "winner",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "room",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  111,
+                  111,
+                  109
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "room.creator",
+                "account": "RoomShared"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "room"
+              }
+            ]
+          }
+        }
+      ],
+      "args": []
     }
   ],
   "accounts": [

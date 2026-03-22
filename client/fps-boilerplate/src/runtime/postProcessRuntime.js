@@ -5,6 +5,8 @@ import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { FXAAShader } from 'three/examples/jsm/shaders/FXAAShader.js';
 
+const CLEAN_CATALOG_POST = true;
+
 const PEAK_GRADE_SHADER = {
   uniforms: {
     tDiffuse: { value: null },
@@ -94,36 +96,50 @@ export function createPostProcessRuntime({ renderer, scene, camera }) {
   const renderPass = new RenderPass(scene, camera);
   composer.addPass(renderPass);
 
-  const bloomPass = new UnrealBloomPass(
-    new THREE.Vector2(size.x, size.y),
-    0.24,
-    0.45,
-    0.86
-  );
-  composer.addPass(bloomPass);
+  const bloomPass = CLEAN_CATALOG_POST
+    ? null
+    : new UnrealBloomPass(
+      new THREE.Vector2(size.x, size.y),
+      0.24,
+      0.45,
+      0.86
+    );
+  if (bloomPass) {
+    composer.addPass(bloomPass);
+  }
 
-  const peakGradePass = new ShaderPass(PEAK_GRADE_SHADER);
-  composer.addPass(peakGradePass);
+  const peakGradePass = CLEAN_CATALOG_POST ? null : new ShaderPass(PEAK_GRADE_SHADER);
+  if (peakGradePass) {
+    composer.addPass(peakGradePass);
+  }
 
-  const fxaaPass = new ShaderPass(FXAAShader);
-  fxaaPass.material.uniforms.resolution.value.set(
-    1 / (size.x * renderer.getPixelRatio()),
-    1 / (size.y * renderer.getPixelRatio())
-  );
-  composer.addPass(fxaaPass);
+  const fxaaPass = CLEAN_CATALOG_POST ? null : new ShaderPass(FXAAShader);
+  if (fxaaPass) {
+    fxaaPass.material.uniforms.resolution.value.set(
+      1 / (size.x * renderer.getPixelRatio()),
+      1 / (size.y * renderer.getPixelRatio())
+    );
+    composer.addPass(fxaaPass);
+  }
 
   function setSize(width, height) {
     composer.setSize(width, height);
-    bloomPass.setSize(width, height);
-    fxaaPass.material.uniforms.resolution.value.set(
-      1 / (width * renderer.getPixelRatio()),
-      1 / (height * renderer.getPixelRatio())
-    );
+    if (bloomPass) {
+      bloomPass.setSize(width, height);
+    }
+    if (fxaaPass) {
+      fxaaPass.material.uniforms.resolution.value.set(
+        1 / (width * renderer.getPixelRatio()),
+        1 / (height * renderer.getPixelRatio())
+      );
+    }
   }
 
   function render(activeCamera = camera, { timeSeconds = performance.now() * 0.001 } = {}) {
     renderPass.camera = activeCamera;
-    peakGradePass.uniforms.time.value = timeSeconds;
+    if (peakGradePass) {
+      peakGradePass.uniforms.time.value = timeSeconds;
+    }
     composer.render();
   }
 
@@ -141,40 +157,43 @@ export function createPostProcessRuntime({ renderer, scene, camera }) {
     bloomRadius,
     bloomThreshold
   } = {}) {
-    if (Number.isFinite(saturation)) {
+    if (!peakGradePass && !bloomPass) {
+      return;
+    }
+    if (peakGradePass && Number.isFinite(saturation)) {
       peakGradePass.uniforms.saturation.value = saturation;
     }
-    if (Number.isFinite(contrast)) {
+    if (peakGradePass && Number.isFinite(contrast)) {
       peakGradePass.uniforms.contrast.value = contrast;
     }
-    if (Number.isFinite(warmth)) {
+    if (peakGradePass && Number.isFinite(warmth)) {
       peakGradePass.uniforms.warmth.value = warmth;
     }
-    if (Number.isFinite(shadowLift)) {
+    if (peakGradePass && Number.isFinite(shadowLift)) {
       peakGradePass.uniforms.shadowLift.value = shadowLift;
     }
-    if (Number.isFinite(highlightSoftness)) {
+    if (peakGradePass && Number.isFinite(highlightSoftness)) {
       peakGradePass.uniforms.highlightSoftness.value = highlightSoftness;
     }
-    if (Number.isFinite(blackPoint)) {
+    if (peakGradePass && Number.isFinite(blackPoint)) {
       peakGradePass.uniforms.blackPoint.value = blackPoint;
     }
-    if (Number.isFinite(vignetteStrength)) {
+    if (peakGradePass && Number.isFinite(vignetteStrength)) {
       peakGradePass.uniforms.vignetteStrength.value = vignetteStrength;
     }
-    if (Number.isFinite(vignetteSoftness)) {
+    if (peakGradePass && Number.isFinite(vignetteSoftness)) {
       peakGradePass.uniforms.vignetteSoftness.value = vignetteSoftness;
     }
-    if (Number.isFinite(grainAmount)) {
+    if (peakGradePass && Number.isFinite(grainAmount)) {
       peakGradePass.uniforms.grainAmount.value = grainAmount;
     }
-    if (Number.isFinite(bloomStrength)) {
+    if (bloomPass && Number.isFinite(bloomStrength)) {
       bloomPass.strength = bloomStrength;
     }
-    if (Number.isFinite(bloomRadius)) {
+    if (bloomPass && Number.isFinite(bloomRadius)) {
       bloomPass.radius = bloomRadius;
     }
-    if (Number.isFinite(bloomThreshold)) {
+    if (bloomPass && Number.isFinite(bloomThreshold)) {
       bloomPass.threshold = bloomThreshold;
     }
   }

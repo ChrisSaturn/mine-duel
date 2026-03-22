@@ -8,6 +8,59 @@ import {
 const DEFAULT_CHUNK_SIZE = 16;
 const DEFAULT_SUBCHUNK_HEIGHT = 16;
 const EPSILON = 1e-4;
+const HOVER_OVERLAY_THICKNESS = 0.018;
+
+function createHoverOutlineMaterial() {
+  return new THREE.ShaderMaterial({
+    uniforms: {
+      uColor: { value: new THREE.Color(0xffffff) },
+      uThickness: { value: HOVER_OVERLAY_THICKNESS },
+      uOpacity: { value: 0.92 }
+    },
+    vertexShader: `
+      uniform float uThickness;
+
+      void main() {
+        vec3 expandedPosition = position + (normal * uThickness);
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(expandedPosition, 1.0);
+      }
+    `,
+    fragmentShader: `
+      uniform vec3 uColor;
+      uniform float uOpacity;
+
+      void main() {
+        gl_FragColor = vec4(uColor, uOpacity);
+      }
+    `,
+    side: THREE.DoubleSide,
+    transparent: true,
+    depthTest: true,
+    depthWrite: false,
+    polygonOffset: true,
+    polygonOffsetFactor: -2,
+    polygonOffsetUnits: -2,
+    toneMapped: false
+  });
+}
+
+function cloneVoxel(voxel) {
+  if (!voxel) {
+    return null;
+  }
+  return {
+    x: voxel.x,
+    y: voxel.y,
+    z: voxel.z
+  };
+}
+
+function areVoxelsEqual(a, b) {
+  return Boolean(a) && Boolean(b)
+    && a.x === b.x
+    && a.y === b.y
+    && a.z === b.z;
+}
 
 function parseChunkId(chunkId) {
   const parts = String(chunkId || '').split(':').map((value) => Number(value));
@@ -363,9 +416,26 @@ export function createVoxelRuntime({ scene }) {
     emissive: new THREE.Color(styleState.emissive),
     emissiveIntensity: styleState.emissiveIntensity
   });
+  const hoverOutlineGeometry = new THREE.BoxGeometry(1, 1, 1);
+  const hoverOutlineMaterial = createHoverOutlineMaterial();
+  const hoverOutlineMesh = new THREE.Mesh(hoverOutlineGeometry, hoverOutlineMaterial);
+  hoverOutlineMesh.name = 'voxel-hover-outline';
+  hoverOutlineMesh.visible = false;
+  hoverOutlineMesh.frustumCulled = false;
+  hoverOutlineMesh.renderOrder = 1100;
+  root.add(hoverOutlineMesh);
 
   const chunks = new Map();
   let mineZones = [];
+  let hoveredVoxel = null;
+
+  function enableOutlineAutoTransform() {
+    if (!hoverOutlineMesh.matrixAutoUpdate) {
+      hoverOutlineMesh.matrixAutoUpdate = true;
+      hoverOutlineMesh.matrix.identity();
+      hoverOutlineMesh.matrixWorldNeedsUpdate = true;
+    }
+  }
 
   function applyMaterialStyle() {
     material.emissive.setHex(styleState.emissive);
@@ -516,10 +586,82 @@ export function createVoxelRuntime({ scene }) {
 
   function setMineZones(nextMineZones) {
     mineZones = Array.isArray(nextMineZones) ? nextMineZones : [];
+    if (hoveredVoxel && !inMineZone(mineZones, hoveredVoxel)) {
+      setHoveredVoxel(null);
+    }
   }
 
   function getMineZones() {
     return [...mineZones];
+  }
+
+  function setHoveredVoxel(worldVoxel) {
+    if (!worldVoxel || !inMineZone(mineZones, worldVoxel) || getVoxelValue(worldVoxel) <= 0) {
+      hoveredVoxel = null;
+      hoverOutlineMesh.visible = false;
+      return;
+    }
+
+    if (areVoxelsEqual(hoveredVoxel, worldVoxel)) {
+      return;
+    }
+
+    enableOutlineAutoTransform();
+    hoveredVoxel = cloneVoxel(worldVoxel);
+    hoverOutlineMesh.geometry = hoverOutlineGeometry;
+    hoverOutlineMesh.position.set(
+      hoveredVoxel.x + 0.5,
+      hoveredVoxel.y + 0.5,
+      hoveredVoxel.z + 0.5
+    );
+    hoverOutlineMesh.quaternion.identity();
+    hoverOutlineMesh.scale.set(1, 1, 1);
+    hoverOutlineMesh.visible = true;
+  }
+
+  /**
+   * @param {{ position: THREE.Vector3, quaternion?: THREE.Quaternion, scale?: THREE.Vector3 } | null} transform
+   */
+  function setHoveredBlockTransform(transform) {
+    if (!transform?.position) {
+      hoveredVoxel = null;
+      hoverOutlineMesh.visible = false;
+      return;
+    }
+
+    enableOutlineAutoTransform();
+    hoveredVoxel = null;
+    hoverOutlineMesh.geometry = hoverOutlineGeometry;
+    hoverOutlineMesh.position.copy(transform.position);
+    if (transform.quaternion) {
+      hoverOutlineMesh.quaternion.copy(transform.quaternion);
+    } else {
+      hoverOutlineMesh.quaternion.identity();
+    }
+    if (transform.scale) {
+      hoverOutlineMesh.scale.copy(transform.scale);
+    } else {
+      hoverOutlineMesh.scale.set(1, 1, 1);
+    }
+    hoverOutlineMesh.visible = true;
+  }
+
+  /**
+   * @param {{ geometry: THREE.BufferGeometry, matrixWorld: THREE.Matrix4 } | null} target
+   */
+  function setHoveredBlockMeshTarget(target) {
+    if (!target?.geometry || !target?.matrixWorld) {
+      hoveredVoxel = null;
+      hoverOutlineMesh.visible = false;
+      return;
+    }
+
+    hoveredVoxel = null;
+    hoverOutlineMesh.geometry = target.geometry;
+    hoverOutlineMesh.matrixAutoUpdate = false;
+    hoverOutlineMesh.matrix.copy(target.matrixWorld);
+    hoverOutlineMesh.matrixWorldNeedsUpdate = true;
+    hoverOutlineMesh.visible = true;
   }
 
   function setBiome(nextBiome) {
@@ -548,6 +690,8 @@ export function createVoxelRuntime({ scene }) {
       }
     }
     chunks.clear();
+    hoverOutlineGeometry.dispose();
+    hoverOutlineMaterial.dispose();
     material.dispose();
     scene.remove(root);
   }
@@ -560,6 +704,9 @@ export function createVoxelRuntime({ scene }) {
     raycastMine,
     setMineZones,
     getMineZones,
+    setHoveredVoxel,
+    setHoveredBlockTransform,
+    setHoveredBlockMeshTarget,
     setBiome,
     getBiome: () => activeBiome,
     dispose

@@ -5,9 +5,7 @@ use ephemeral_rollups_sdk::cpi::{
     delegate_account, DelegateAccounts, DelegateConfig, DELEGATION_PROGRAM_ID,
 };
 use ephemeral_rollups_sdk::ephem::{commit_accounts, commit_and_undelegate_accounts};
-use ephemeral_vrf_sdk::instructions::{
-    create_request_regular_randomness_ix, RequestRandomnessParams,
-};
+use ephemeral_vrf_sdk::instructions::{create_request_randomness_ix, RequestRandomnessParams};
 use ephemeral_vrf_sdk::types::SerializableAccountMeta;
 use session_keys::SessionToken;
 
@@ -191,12 +189,20 @@ pub mod mine_duel {
         let expected_winner =
             Pubkey::find_program_address(&[SEED_WINNER, room_key.as_ref()], &ID).0;
         let expected_p1_reveal = Pubkey::find_program_address(
-            &[SEED_REVEAL, room_key.as_ref(), room_state.player_one.as_ref()],
+            &[
+                SEED_REVEAL,
+                room_key.as_ref(),
+                room_state.player_one.as_ref(),
+            ],
             &ID,
         )
         .0;
         let expected_p2_reveal = Pubkey::find_program_address(
-            &[SEED_REVEAL, room_key.as_ref(), room_state.player_two.as_ref()],
+            &[
+                SEED_REVEAL,
+                room_key.as_ref(),
+                room_state.player_two.as_ref(),
+            ],
             &ID,
         )
         .0;
@@ -240,8 +246,12 @@ pub mod mine_duel {
         verify_delegate_aux_accounts(
             &ctx.accounts.winner_state.to_account_info(),
             &ctx.accounts.buffer_winner_state.to_account_info(),
-            &ctx.accounts.delegation_record_winner_state.to_account_info(),
-            &ctx.accounts.delegation_metadata_winner_state.to_account_info(),
+            &ctx.accounts
+                .delegation_record_winner_state
+                .to_account_info(),
+            &ctx.accounts
+                .delegation_metadata_winner_state
+                .to_account_info(),
             owner_program_id,
             delegation_program_id,
         )?;
@@ -303,8 +313,12 @@ pub mod mine_duel {
             &ctx.accounts.system_program.to_account_info(),
             &ctx.accounts.winner_state.to_account_info(),
             &ctx.accounts.buffer_winner_state.to_account_info(),
-            &ctx.accounts.delegation_record_winner_state.to_account_info(),
-            &ctx.accounts.delegation_metadata_winner_state.to_account_info(),
+            &ctx.accounts
+                .delegation_record_winner_state
+                .to_account_info(),
+            &ctx.accounts
+                .delegation_metadata_winner_state
+                .to_account_info(),
             &[SEED_WINNER, room_key.as_ref()],
             maybe_validator,
         )?;
@@ -357,7 +371,6 @@ pub mod mine_duel {
     pub fn request_winner_vrf(ctx: Context<RequestWinnerVrf>, client_seed: u8) -> Result<()> {
         {
             let room = &ctx.accounts.room;
-            let winner_state = &ctx.accounts.winner_state;
             require!(
                 room.status == RoomStatus::WaitingForVrf,
                 MineDuelError::InvalidStatus
@@ -367,13 +380,12 @@ pub mod mine_duel {
                     || room.player_two == ctx.accounts.payer.key(),
                 MineDuelError::Unauthorized
             );
-            require!(
-                !winner_state.vrf_requested,
-                MineDuelError::AlreadyVrfRequested
-            );
         }
 
-        let request_ix = create_request_regular_randomness_ix(RequestRandomnessParams {
+        let (winner_state, _) =
+            Pubkey::find_program_address(&[SEED_WINNER, ctx.accounts.room.key().as_ref()], &ID);
+
+        let request_ix = create_request_randomness_ix(RequestRandomnessParams {
             payer: ctx.accounts.payer.key(),
             oracle_queue: ctx.accounts.oracle_queue.key(),
             callback_program_id: ID,
@@ -386,7 +398,7 @@ pub mod mine_duel {
                     is_writable: true,
                 },
                 SerializableAccountMeta {
-                    pubkey: ctx.accounts.winner_state.key(),
+                    pubkey: winner_state,
                     is_signer: false,
                     is_writable: true,
                 },
@@ -397,8 +409,6 @@ pub mod mine_duel {
         ctx.accounts
             .invoke_signed_vrf(&ctx.accounts.payer.to_account_info(), &request_ix)?;
 
-        ctx.accounts.winner_state.vrf_requested = true;
-        ctx.accounts.room.last_action_slot = Clock::get()?.slot;
         Ok(())
     }
 
@@ -410,7 +420,6 @@ pub mod mine_duel {
             room.status == RoomStatus::WaitingForVrf,
             MineDuelError::InvalidStatus
         );
-        require!(winner_state.vrf_requested, MineDuelError::VrfNotReady);
         require!(!winner_state.vrf_fulfilled, MineDuelError::InvalidStatus);
 
         let x = randomness[0] % MAP_WIDTH;
@@ -419,6 +428,7 @@ pub mod mine_duel {
 
         winner_state.randomness = randomness;
         winner_state.winner_cell = [x, y, z];
+        winner_state.vrf_requested = true;
         winner_state.vrf_fulfilled = true;
 
         room.status = RoomStatus::Active;
@@ -513,8 +523,6 @@ pub mod mine_duel {
 
     pub fn finalize_win(ctx: Context<FinalizeWin>) -> Result<()> {
         let room = &mut ctx.accounts.room;
-        let vault_info = ctx.accounts.vault.to_account_info();
-        let winner_info = ctx.accounts.winner.to_account_info();
 
         require!(room.status == RoomStatus::Won, MineDuelError::InvalidStatus);
         require_keys_eq!(
@@ -553,6 +561,35 @@ pub mod mine_duel {
             MineDuelError::InvalidFinalizeAccounts
         );
 
+        commit_and_undelegate_accounts(
+            &ctx.accounts.payer,
+            vec![
+                &ctx.accounts.room.to_account_info(),
+                &ctx.accounts.vault.to_account_info(),
+                &ctx.accounts.winner_state,
+                &ctx.accounts.player_one_reveal,
+                &ctx.accounts.player_two_reveal,
+            ],
+            &ctx.accounts.magic_context,
+            &ctx.accounts.magic_program,
+        )?;
+
+        Ok(())
+    }
+
+    pub fn settle_win_payout(ctx: Context<SettleWinPayout>) -> Result<()> {
+        let room = &mut ctx.accounts.room;
+        let vault_info = ctx.accounts.vault.to_account_info();
+        let winner_info = ctx.accounts.winner.to_account_info();
+
+        require!(room.status == RoomStatus::Won, MineDuelError::InvalidStatus);
+        require_keys_eq!(
+            room.winner,
+            ctx.accounts.winner.key(),
+            MineDuelError::Unauthorized
+        );
+        require!(room.total_escrow_lamports > 0, MineDuelError::InvalidStatus);
+
         let payout = room.total_escrow_lamports;
         let new_vault_lamports = vault_info
             .lamports()
@@ -569,20 +606,6 @@ pub mod mine_duel {
         room.total_escrow_lamports = 0;
         room.status = RoomStatus::Finalized;
         room.last_action_slot = Clock::get()?.slot;
-
-        commit_and_undelegate_accounts(
-            &ctx.accounts.winner,
-            vec![
-                &ctx.accounts.room.to_account_info(),
-                &ctx.accounts.vault.to_account_info(),
-                &ctx.accounts.winner_state,
-                &ctx.accounts.player_one_reveal,
-                &ctx.accounts.player_two_reveal,
-            ],
-            &ctx.accounts.magic_context,
-            &ctx.accounts.magic_program,
-        )?;
-
         Ok(())
     }
 }
@@ -781,18 +804,8 @@ pub struct DelegatePrivateState<'info> {
 pub struct RequestWinnerVrf<'info> {
     #[account(mut)]
     pub payer: Signer<'info>,
-    #[account(
-        mut,
-        seeds = [SEED_ROOM, room.creator.as_ref()],
-        bump = room.bump
-    )]
+    #[account(seeds = [SEED_ROOM, room.creator.as_ref()], bump = room.bump)]
     pub room: Account<'info, RoomShared>,
-    #[account(
-        mut,
-        seeds = [SEED_WINNER, room.key().as_ref()],
-        bump = winner_state.bump
-    )]
-    pub winner_state: Account<'info, WinnerState>,
     /// CHECK: VRF queue account validated by address.
     #[account(mut, address = ephemeral_vrf_sdk::consts::DEFAULT_EPHEMERAL_QUEUE)]
     pub oracle_queue: AccountInfo<'info>,
@@ -897,6 +910,7 @@ pub struct CommitCheckpoint<'info> {
 #[derive(Accounts)]
 pub struct FinalizeWin<'info> {
     #[account(mut)]
+    pub payer: Signer<'info>,
     pub winner: Signer<'info>,
     #[account(
         mut,
@@ -919,6 +933,24 @@ pub struct FinalizeWin<'info> {
     /// CHECK: Validated against derived reveal PDA in handler.
     #[account(mut)]
     pub player_two_reveal: AccountInfo<'info>,
+}
+
+#[derive(Accounts)]
+pub struct SettleWinPayout<'info> {
+    #[account(mut)]
+    pub winner: Signer<'info>,
+    #[account(
+        mut,
+        seeds = [SEED_ROOM, room.creator.as_ref()],
+        bump = room.bump
+    )]
+    pub room: Account<'info, RoomShared>,
+    #[account(
+        mut,
+        seeds = [SEED_VAULT, room.key().as_ref()],
+        bump = vault.bump
+    )]
+    pub vault: Account<'info, VaultEscrow>,
 }
 
 #[account]

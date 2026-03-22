@@ -14,6 +14,9 @@ const SKY_DOME_RADIUS = 320;
 const TOP_SKY_SUN_ELEVATION = 1.02;
 const TOP_SKY_SUN_AZIMUTH_SPEED = 0.00738;
 const TOP_SKY_SUN_AZIMUTH_OFFSET = Math.PI * 0.22;
+const LOCK_CATALOG_DAYLIGHT = true;
+const CATALOG_FOG_NEAR = 280;
+const CATALOG_FOG_FAR = 1800;
 
 const SKY_VERTEX_SHADER = `
 varying vec3 vWorldPosition;
@@ -152,14 +155,14 @@ export function createAtmosphereRuntime({ scene, renderer }) {
   scene.add(root);
 
   renderer.physicallyCorrectLights = true;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.shadowMap.type = THREE.PCFShadowMap;
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.autoUpdate = true;
-  renderer.toneMappingExposure = 1.04;
+  renderer.toneMappingExposure = 1;
 
   const fogColor = new THREE.Color(0x8ea5c0);
   scene.background = fogColor.clone();
-  scene.fog = new THREE.Fog(fogColor.clone(), 44, 250);
+  scene.fog = new THREE.Fog(fogColor.clone(), CATALOG_FOG_NEAR, CATALOG_FOG_FAR);
 
   const hemi = new THREE.HemisphereLight(0x8eb6f0, 0x4b5871, 0.34);
   root.add(hemi);
@@ -188,8 +191,8 @@ export function createAtmosphereRuntime({ scene, renderer }) {
   sunLight.shadow.camera.near = 8;
   sunLight.shadow.camera.far = 290;
   sunLight.shadow.bias = -0.00045;
-  sunLight.shadow.normalBias = 0.024;
-  sunLight.shadow.radius = 2.0;
+  sunLight.shadow.normalBias = 0.012;
+  sunLight.shadow.radius = 0.85;
   root.add(sunLight);
 
   const skyDome = new THREE.Mesh(
@@ -349,7 +352,9 @@ export function createAtmosphereRuntime({ scene, renderer }) {
   function update({ timeSeconds = 0, focusPosition = null } = {}) {
     const focus = focusPosition || root.position;
     const elevation = TOP_SKY_SUN_ELEVATION;
-    const azimuth = timeSeconds * TOP_SKY_SUN_AZIMUTH_SPEED + TOP_SKY_SUN_AZIMUTH_OFFSET;
+    const azimuth = LOCK_CATALOG_DAYLIGHT
+      ? TOP_SKY_SUN_AZIMUTH_OFFSET
+      : timeSeconds * TOP_SKY_SUN_AZIMUTH_SPEED + TOP_SKY_SUN_AZIMUTH_OFFSET;
 
     const cosElevation = Math.cos(elevation);
     sunDirection.set(
@@ -360,9 +365,11 @@ export function createAtmosphereRuntime({ scene, renderer }) {
 
     const daylight = THREE.MathUtils.smoothstep(sunDirection.y, -0.08, 0.7);
     const night = THREE.MathUtils.smoothstep(-sunDirection.y, 0.08, 0.72);
-    const dayFactor = daylight * (1 - night);
-    const nightFactor = night * (1 - daylight);
-    const sunsetFactor = THREE.MathUtils.clamp(1 - dayFactor - nightFactor, 0, 1);
+    const dayFactor = LOCK_CATALOG_DAYLIGHT ? 1 : daylight * (1 - night);
+    const nightFactor = LOCK_CATALOG_DAYLIGHT ? 0 : night * (1 - daylight);
+    const sunsetFactor = LOCK_CATALOG_DAYLIGHT
+      ? 0
+      : THREE.MathUtils.clamp(1 - dayFactor - nightFactor, 0, 1);
 
     anchoredFocus.copy(focus);
     anchoredFocus.x = snapToStep(anchoredFocus.x, shadowTexelWorldSize);
@@ -459,14 +466,22 @@ export function createAtmosphereRuntime({ scene, renderer }) {
       .copy(fogNightColor)
       .lerp(fogSunsetColor, sunsetFactor)
       .lerp(fogDayColor, dayFactor);
-    scene.fog.color.copy(fogMixColor);
+    if (scene.fog) {
+      scene.fog.color.copy(fogMixColor);
+      scene.fog.near = LOCK_CATALOG_DAYLIGHT
+        ? CATALOG_FOG_NEAR
+        : THREE.MathUtils.lerp(fogRange.nearNight, fogRange.nearDay, dayFactor);
+      scene.fog.far = LOCK_CATALOG_DAYLIGHT
+        ? CATALOG_FOG_FAR
+        : THREE.MathUtils.lerp(fogRange.farNight, fogRange.farDay, dayFactor)
+          + sunsetFactor * fogRange.sunsetBonus;
+    }
     scene.background.copy(fogMixColor);
-    scene.fog.near = THREE.MathUtils.lerp(fogRange.nearNight, fogRange.nearDay, dayFactor);
-    scene.fog.far = THREE.MathUtils.lerp(fogRange.farNight, fogRange.farDay, dayFactor)
-      + sunsetFactor * fogRange.sunsetBonus;
 
-    renderer.toneMappingExposure = THREE.MathUtils.lerp(exposure.night, exposure.day, dayFactor)
-      + sunsetFactor * exposure.sunsetBoost;
+    renderer.toneMappingExposure = LOCK_CATALOG_DAYLIGHT
+      ? 1
+      : THREE.MathUtils.lerp(exposure.night, exposure.day, dayFactor)
+        + sunsetFactor * exposure.sunsetBoost;
 
     sunTarget.updateMatrixWorld(true);
     fillTarget.updateMatrixWorld(true);

@@ -22,6 +22,10 @@ export const CAMERA_PRESET_PITCH_MAX_CEIL = Math.PI / 2;
 const PRIMITIVE_PLANE_TEMPLATE = 'primitive-plane';
 const CUBE_WORLD_BLOCK_GRASS_TEMPLATE = 'cube-world-block-grass';
 const CUBE_WORLD_BLOCK_STONE_TEMPLATE = 'cube-world-block-stone';
+const CUBE_WORLD_BLOCK_DIRT_TEMPLATE = 'cube-world-block-dirt';
+const CUBE_WORLD_BLOCK_COAL_TEMPLATE = 'cube-world-block-coal';
+const CUBE_WORLD_BLOCK_DIAMOND_TEMPLATE = 'cube-world-block-diamond';
+const CUBE_WORLD_BLOCK_PURPLE_ORE_TEMPLATE = 'cube-world-block-purple-ore';
 const CUBE_WORLD_GROUND_TEMPLATE = 'cube-world-ground';
 const DEMO_SCENE_TEMPLATE = 'demo-scene';
 const CUBE_WORLD_GROUND_TILES_X = 48;
@@ -29,11 +33,51 @@ const CUBE_WORLD_GROUND_TILES_Z = 48;
 const CUBE_WORLD_STONE_PATCH_TILES_X = 16;
 const CUBE_WORLD_STONE_PATCH_TILES_Z = 16;
 const CUBE_WORLD_STONE_PATCH_TILES_Y = 8;
-const CUBE_WORLD_STONE_PATCH_START_X = 28;
-const CUBE_WORLD_STONE_PATCH_START_Z = 28;
+const CUBE_WORLD_STONE_PATCH_START_X = Math.floor(
+  (CUBE_WORLD_GROUND_TILES_X - CUBE_WORLD_STONE_PATCH_TILES_X) * 0.5
+);
+const CUBE_WORLD_STONE_PATCH_START_Z = Math.floor(
+  (CUBE_WORLD_GROUND_TILES_Z - CUBE_WORLD_STONE_PATCH_TILES_Z) * 0.5
+);
+const STONE_PATCH_VARIANT_WEIGHTS = Object.freeze({
+  stone: 62,
+  coal: 16,
+  purpleOre: 12,
+  diamond: 10
+});
+const STONE_PATCH_VARIANTS = Object.freeze([
+  Object.freeze({
+    key: 'stone',
+    template: CUBE_WORLD_BLOCK_STONE_TEMPLATE,
+    meshName: 'cube-world-ground-stone-cubes'
+  }),
+  Object.freeze({
+    key: 'coal',
+    template: CUBE_WORLD_BLOCK_COAL_TEMPLATE,
+    meshName: 'cube-world-ground-coal-cubes'
+  }),
+  Object.freeze({
+    key: 'diamond',
+    template: CUBE_WORLD_BLOCK_DIAMOND_TEMPLATE,
+    meshName: 'cube-world-ground-diamond-cubes'
+  }),
+  Object.freeze({
+    key: 'purpleOre',
+    template: CUBE_WORLD_BLOCK_PURPLE_ORE_TEMPLATE,
+    meshName: 'cube-world-ground-purple-ore-cubes'
+  })
+]);
+const STONE_PATCH_VARIANT_TOTAL_WEIGHT = STONE_PATCH_VARIANTS.reduce(
+  (sum, variant) => sum + (STONE_PATCH_VARIANT_WEIGHTS[variant.key] || 0),
+  0
+);
 const NON_STYLIZED_WORLD_TEMPLATES = new Set([
   DEMO_SCENE_TEMPLATE,
   'character-male-a'
+]);
+const MINE_HOVER_TARGET_TEMPLATES = new Set([
+  'cube-world-rock-1',
+  'cube-world-rock-2'
 ]);
 const CHARACTER_TEMPLATE_PREFIX = 'blocky-character-';
 
@@ -46,6 +90,10 @@ export const MODEL_TEMPLATES = {
   [PRIMITIVE_PLANE_TEMPLATE]: '__procedural__/primitive-plane',
   [CUBE_WORLD_BLOCK_GRASS_TEMPLATE]: withBaseUrl('models/cube-world/Blocks/glTF/Block_Grass.gltf'),
   [CUBE_WORLD_BLOCK_STONE_TEMPLATE]: withBaseUrl('models/cube-world/Blocks/glTF/Block_Stone.gltf'),
+  [CUBE_WORLD_BLOCK_DIRT_TEMPLATE]: withBaseUrl('models/cube-world/Blocks/glTF/Block_Dirt.gltf'),
+  [CUBE_WORLD_BLOCK_COAL_TEMPLATE]: withBaseUrl('models/cube-world/Blocks/glTF/Block_Coal.gltf'),
+  [CUBE_WORLD_BLOCK_DIAMOND_TEMPLATE]: withBaseUrl('models/cube-world/Blocks/glTF/Block_Diamond.gltf'),
+  [CUBE_WORLD_BLOCK_PURPLE_ORE_TEMPLATE]: withBaseUrl('models/cube-world/Blocks/glTF/Block_Crystal.gltf'),
   [CUBE_WORLD_GROUND_TEMPLATE]: '__procedural__/cube-world-ground',
   [DEMO_SCENE_TEMPLATE]: withBaseUrl('models/maps/demo-scene/Demo.gltf'),
   'cube-world-tree-1': withBaseUrl('models/cube-world/Environment/glTF/Tree_1.gltf'),
@@ -62,6 +110,9 @@ export const MODEL_TEMPLATES = {
   'cube-world-flowers-2': withBaseUrl('models/cube-world/Environment/glTF/Flowers_2.gltf'),
   'cube-world-grass-small': withBaseUrl('models/cube-world/Environment/glTF/Grass_Small.gltf'),
   'cube-world-grass-big': withBaseUrl('models/cube-world/Environment/glTF/Grass_Big.gltf'),
+  'kenney-survival-rock-a': withBaseUrl('models/kenney-survival/GLB format/rock-a.glb'),
+  'kenney-survival-rock-b': withBaseUrl('models/kenney-survival/GLB format/rock-b.glb'),
+  'kenney-survival-rock-c': withBaseUrl('models/kenney-survival/GLB format/rock-c.glb'),
   'block-grass': withBaseUrl('models/platformer/block-grass.glb'),
   'block-grass-low': withBaseUrl('models/platformer/block-grass-low.glb'),
   'block-grass-large': withBaseUrl('models/platformer/block-grass-large.glb'),
@@ -110,6 +161,27 @@ function normalizeScale(value) {
 
 function cloneMapData(mapData) {
   return JSON.parse(JSON.stringify(mapData));
+}
+
+function hashStonePatchVariantSeed(x, yLayer, z) {
+  let hash = (x * 73856093) ^ (yLayer * 19349663) ^ (z * 83492791);
+  hash = (hash ^ (hash >>> 13)) >>> 0;
+  return hash;
+}
+
+function resolveStonePatchVariantKey(x, yLayer, z) {
+  const totalWeight = Math.max(STONE_PATCH_VARIANT_TOTAL_WEIGHT, 1);
+  const weightedRoll = hashStonePatchVariantSeed(x, yLayer, z) % totalWeight;
+  let cumulative = 0;
+
+  for (const variant of STONE_PATCH_VARIANTS) {
+    cumulative += STONE_PATCH_VARIANT_WEIGHTS[variant.key] || 0;
+    if (weightedRoll < cumulative) {
+      return variant.key;
+    }
+  }
+
+  return 'stone';
 }
 
 function normalizeObjectEntry(entry, index) {
@@ -244,6 +316,7 @@ async function loadSceneTemplate(templateName) {
     colliderVolume.name = 'primitive-plane-collider';
     colliderVolume.userData.mapCollider = true;
     colliderVolume.userData.colliderShape = 'bounds';
+    colliderVolume.userData.colliderGroundOnly = true;
     colliderVolume.userData.forceCastShadow = false;
     colliderVolume.userData.forceReceiveShadow = false;
     template.add(colliderVolume);
@@ -257,28 +330,46 @@ async function loadSceneTemplate(templateName) {
     }
 
     const sourceGrassTemplate = await loadSceneTemplate(CUBE_WORLD_BLOCK_GRASS_TEMPLATE);
-    const sourceStoneTemplate = await loadSceneTemplate(CUBE_WORLD_BLOCK_STONE_TEMPLATE);
+    const stonePatchVariantTemplates = await Promise.all(
+      STONE_PATCH_VARIANTS.map((variant) => loadSceneTemplate(variant.template))
+    );
     sourceGrassTemplate.updateMatrixWorld(true);
-    sourceStoneTemplate.updateMatrixWorld(true);
+    for (const variantTemplate of stonePatchVariantTemplates) {
+      variantTemplate.updateMatrixWorld(true);
+    }
 
     const sourceGrassMesh = firstRenderableMesh(sourceGrassTemplate);
-    const sourceStoneMesh = firstRenderableMesh(sourceStoneTemplate);
-
     if (!sourceGrassMesh) {
       throw new Error(`Template \"${CUBE_WORLD_BLOCK_GRASS_TEMPLATE}\" has no mesh geometry.`);
     }
-    if (!sourceStoneMesh) {
-      throw new Error(`Template \"${CUBE_WORLD_BLOCK_STONE_TEMPLATE}\" has no mesh geometry.`);
-    }
+
+    const stonePatchVariantSources = STONE_PATCH_VARIANTS.map((variant, index) => {
+      const sourceMesh = firstRenderableMesh(stonePatchVariantTemplates[index]);
+      if (!sourceMesh) {
+        throw new Error(`Template \"${variant.template}\" has no mesh geometry.`);
+      }
+
+      const sourceMaterial = Array.isArray(sourceMesh.material)
+        ? sourceMesh.material[0]
+        : sourceMesh.material;
+
+      const quaternion = new THREE.Quaternion();
+      const scale = new THREE.Vector3();
+      sourceMesh.matrixWorld.decompose(new THREE.Vector3(), quaternion, scale);
+
+      return {
+        ...variant,
+        material: sourceMaterial,
+        geometry: sourceMesh.geometry.clone(),
+        quaternion,
+        scale
+      };
+    });
 
     const sourceGrassMaterial = Array.isArray(sourceGrassMesh.material)
       ? sourceGrassMesh.material[0]
       : sourceGrassMesh.material;
-    const sourceStoneMaterial = Array.isArray(sourceStoneMesh.material)
-      ? sourceStoneMesh.material[0]
-      : sourceStoneMesh.material;
     const grassGeometry = sourceGrassMesh.geometry.clone();
-    const stoneGeometry = sourceStoneMesh.geometry.clone();
     grassGeometry.computeBoundingBox();
 
     const bounds = grassGeometry.boundingBox?.clone();
@@ -300,34 +391,67 @@ async function loadSceneTemplate(templateName) {
     const patchArea = patchWidth * patchDepth;
 
     const grassTileCount = CUBE_WORLD_GROUND_TILES_X * CUBE_WORLD_GROUND_TILES_Z - patchArea;
-    const stoneTileCount = patchArea * CUBE_WORLD_STONE_PATCH_TILES_Y;
+    const stonePatchTileCounts = Object.fromEntries(
+      STONE_PATCH_VARIANTS.map((variant) => [variant.key, 0])
+    );
+    for (let z = CUBE_WORLD_STONE_PATCH_START_Z; z < patchEndZ; z += 1) {
+      for (let x = CUBE_WORLD_STONE_PATCH_START_X; x < patchEndX; x += 1) {
+        for (let yLayer = 0; yLayer < CUBE_WORLD_STONE_PATCH_TILES_Y; yLayer += 1) {
+          const key = resolveStonePatchVariantKey(x, yLayer, z);
+          stonePatchTileCounts[key] = (stonePatchTileCounts[key] || 0) + 1;
+        }
+      }
+    }
 
     const grassInstances = new THREE.InstancedMesh(grassGeometry, sourceGrassMaterial.clone(), grassTileCount);
     grassInstances.name = 'cube-world-ground-grass-cubes';
     grassInstances.castShadow = true;
     grassInstances.receiveShadow = true;
     grassInstances.frustumCulled = false;
+    grassInstances.userData.mapCollider = true;
+    grassInstances.userData.colliderShape = 'mesh';
+    grassInstances.userData.colliderGroundOnly = false;
+    grassInstances.userData.colliderDisableBoundsFallback = true;
 
-    const stoneInstances = new THREE.InstancedMesh(stoneGeometry, sourceStoneMaterial.clone(), stoneTileCount);
-    stoneInstances.name = 'cube-world-ground-stone-cubes';
-    stoneInstances.castShadow = true;
-    stoneInstances.receiveShadow = true;
-    stoneInstances.frustumCulled = false;
+    const stoneInstancesByVariant = new Map();
+    for (const source of stonePatchVariantSources) {
+      const instanceCount = stonePatchTileCounts[source.key] || 0;
+      if (instanceCount <= 0) {
+        continue;
+      }
+
+      const instances = new THREE.InstancedMesh(
+        source.geometry,
+        source.material.clone(),
+        instanceCount
+      );
+      instances.name = source.meshName;
+      instances.castShadow = true;
+      instances.receiveShadow = true;
+      instances.frustumCulled = false;
+      instances.userData.minePatchHoverTarget = true;
+      instances.userData.minePatchVariant = source.key;
+      instances.userData.mapCollider = true;
+      instances.userData.colliderShape = 'mesh';
+      instances.userData.colliderGroundOnly = false;
+      instances.userData.colliderDisableBoundsFallback = true;
+      stoneInstancesByVariant.set(source.key, {
+        source,
+        instances,
+        nextIndex: 0
+      });
+    }
 
     const minX = -((CUBE_WORLD_GROUND_TILES_X - 1) * stepX) * 0.5;
     const minZ = -((CUBE_WORLD_GROUND_TILES_Z - 1) * stepZ) * 0.5;
     const composePosition = new THREE.Vector3();
     const meshOrigin = new THREE.Vector3();
     const grassQuaternion = new THREE.Quaternion();
-    const stoneQuaternion = new THREE.Quaternion();
     const grassScale = new THREE.Vector3();
-    const stoneScale = new THREE.Vector3();
     const instanceMatrix = new THREE.Matrix4();
 
     sourceGrassMesh.matrixWorld.decompose(meshOrigin, grassQuaternion, grassScale);
-    sourceStoneMesh.matrixWorld.decompose(meshOrigin, stoneQuaternion, stoneScale);
     let grassIndex = 0;
-    let stoneIndex = 0;
     for (let z = 0; z < CUBE_WORLD_GROUND_TILES_Z; z += 1) {
       for (let x = 0; x < CUBE_WORLD_GROUND_TILES_X; x += 1) {
         const withinStonePatch = (
@@ -344,9 +468,19 @@ async function loadSceneTemplate(templateName) {
               baseY - yLayer * stepY,
               minZ + z * stepZ
             );
-            instanceMatrix.compose(composePosition, stoneQuaternion, stoneScale);
-            stoneInstances.setMatrixAt(stoneIndex, instanceMatrix);
-            stoneIndex += 1;
+            const variantKey = resolveStonePatchVariantKey(x, yLayer, z);
+            const targetVariant = stoneInstancesByVariant.get(variantKey)
+              || stoneInstancesByVariant.get('stone');
+            if (!targetVariant) {
+              continue;
+            }
+            instanceMatrix.compose(
+              composePosition,
+              targetVariant.source.quaternion,
+              targetVariant.source.scale
+            );
+            targetVariant.instances.setMatrixAt(targetVariant.nextIndex, instanceMatrix);
+            targetVariant.nextIndex += 1;
           }
           continue;
         }
@@ -358,30 +492,41 @@ async function loadSceneTemplate(templateName) {
       }
     }
     grassInstances.instanceMatrix.needsUpdate = true;
-    grassInstances.raycast = () => {};
-    stoneInstances.instanceMatrix.needsUpdate = true;
-    stoneInstances.raycast = () => {};
+    for (const { instances } of stoneInstancesByVariant.values()) {
+      instances.instanceMatrix.needsUpdate = true;
+    }
 
-    const colliderWidth = CUBE_WORLD_GROUND_TILES_X * stepX;
-    const colliderDepth = CUBE_WORLD_GROUND_TILES_Z * stepZ;
-    const colliderHeight = 0.25;
+    const patchWorldWidth = patchWidth * stepX;
+    const patchWorldDepth = patchDepth * stepZ;
+    const patchCenterX = minX + (CUBE_WORLD_STONE_PATCH_START_X + ((patchWidth - 1) * 0.5)) * stepX;
+    const patchCenterZ = minZ + (CUBE_WORLD_STONE_PATCH_START_Z + ((patchDepth - 1) * 0.5)) * stepZ;
+    const patchTopSurfaceY = baseY + bounds.max.y;
+    const patchMineBottomY = patchTopSurfaceY - (CUBE_WORLD_STONE_PATCH_TILES_Y * stepY);
+    const bedrockHeight = Math.max(0.25, stepY * 0.35);
 
-    const groundCollider = new THREE.Mesh(
-      new THREE.BoxGeometry(colliderWidth, colliderHeight, colliderDepth),
+    const mineBedrockCollider = new THREE.Mesh(
+      new THREE.BoxGeometry(patchWorldWidth, bedrockHeight, patchWorldDepth),
       new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false })
     );
-    groundCollider.position.y = -colliderHeight * 0.5;
-    groundCollider.name = 'cube-world-ground-mesh-collider';
-    groundCollider.userData.mapCollider = true;
-    groundCollider.userData.colliderShape = 'bounds';
-    groundCollider.userData.forceCastShadow = false;
-    groundCollider.userData.forceReceiveShadow = false;
+    mineBedrockCollider.position.set(
+      patchCenterX,
+      patchMineBottomY - (bedrockHeight * 0.5),
+      patchCenterZ
+    );
+    mineBedrockCollider.name = 'cube-world-ground-mine-bedrock-collider';
+    mineBedrockCollider.userData.mapCollider = true;
+    mineBedrockCollider.userData.colliderShape = 'bounds';
+    mineBedrockCollider.userData.colliderGroundOnly = true;
+    mineBedrockCollider.userData.forceCastShadow = false;
+    mineBedrockCollider.userData.forceReceiveShadow = false;
 
     const template = new THREE.Group();
     template.name = 'cube-world-ground-template';
     template.add(grassInstances);
-    template.add(stoneInstances);
-    template.add(groundCollider);
+    for (const { instances } of stoneInstancesByVariant.values()) {
+      template.add(instances);
+    }
+    template.add(mineBedrockCollider);
 
     templateCache.set(templateName, template);
     return template;
@@ -458,6 +603,7 @@ async function loadSceneTemplate(templateName) {
       groundCollider.name = 'demo-scene-ground-collider';
       groundCollider.userData.mapCollider = true;
       groundCollider.userData.colliderShape = 'bounds';
+      groundCollider.userData.colliderGroundOnly = true;
       groundCollider.userData.forceCastShadow = false;
       groundCollider.userData.forceReceiveShadow = false;
       template.add(groundCollider);
@@ -479,6 +625,15 @@ async function loadSceneTemplate(templateName) {
       reject
     );
   });
+
+  if (MINE_HOVER_TARGET_TEMPLATES.has(templateName)) {
+    template.traverse((node) => {
+      if (!node?.isMesh && !node?.isInstancedMesh) {
+        return;
+      }
+      node.userData.minePatchHoverTarget = true;
+    });
+  }
 
   templateCache.set(templateName, template);
   return template;
@@ -693,7 +848,7 @@ function collectObjectColliders(objectNode) {
   const explicitColliders = [];
   objectNode.traverse((node) => {
     if (node?.userData?.mapCollider === true) {
-      node.userData.colliderShape = 'bounds';
+      node.userData.colliderShape = node?.userData?.colliderShape === 'mesh' ? 'mesh' : 'bounds';
       explicitColliders.push(node);
     }
   });
@@ -726,6 +881,11 @@ export async function applyMapData(scene, playerRig, colliders, options = {}) {
   const config = options.config ?? null;
   const setMeshShadowFlags = options.setMeshShadowFlags ?? defaultSetMeshShadowFlags;
   const runtimeState = options.runtimeState ?? createRuntimeState(scene);
+  const hasBuiltInGroundTemplate = mapData.objects.some((entry) => (
+    entry?.template === CUBE_WORLD_GROUND_TEMPLATE
+    || entry?.template === PRIMITIVE_PLANE_TEMPLATE
+    || entry?.template === DEMO_SCENE_TEMPLATE
+  ));
 
   clearGroup(runtimeState.worldRoot);
   clearGroup(runtimeState.hitboxRoot);
@@ -807,7 +967,7 @@ export async function applyMapData(scene, playerRig, colliders, options = {}) {
     colliders.push(hitboxMesh);
   }
 
-  if (runtimeState.mapData.hitboxes.length === 0) {
+  if (runtimeState.mapData.hitboxes.length === 0 && !hasBuiltInGroundTemplate) {
     const implicitGround = new THREE.Mesh(
       new THREE.PlaneGeometry(260, 260),
       new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false })
@@ -815,6 +975,7 @@ export async function applyMapData(scene, playerRig, colliders, options = {}) {
 
     implicitGround.rotation.x = -Math.PI / 2;
     implicitGround.name = 'implicit-ground-hitbox';
+    implicitGround.userData.colliderGroundOnly = true;
     runtimeState.hitboxRoot.add(implicitGround);
     colliders.push(implicitGround);
   }

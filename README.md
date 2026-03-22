@@ -3,5 +3,8 @@
 ## Architecture Docs
 
 - [`MAGICBLOCK-PLAYBOOK.MD`](./MAGICBLOCK-PLAYBOOK.MD): Solana + MagicBlock implementation playbook.
-- [`client/fps-boilerplate/README.md`](./client/fps-boilerplate/README.md): active client runtime architecture, including the procedural `cube-world-ground` base-map setup (with a stone `16x16x8` replacement zone that preserves the existing top-height), first-person character runtime, and the biome-driven stylized illumination pipeline (including the new light/friendly `peak` preset plus cinematic sky/fog styling with top-locked gameplay sun, warm/cool voxel shading, high-quality directional shadows, bloom + graded post-process, FXAA).
+- [`smart-contract/ARCHITECTURE.MD`](./smart-contract/ARCHITECTURE.MD): on-chain account model, instruction router split, state transitions, and security controls.
+- [`smart-contract/ONCHAIN-VERIFICATION.MD`](./smart-contract/ONCHAIN-VERIFICATION.MD): v1 verification chain, evidence, and negative-case matrix.
+- [`client/fps-boilerplate/CLIENT-GAMEPLAY-ARCHITECTURE.MD`](./client/fps-boilerplate/CLIENT-GAMEPLAY-ARCHITECTURE.MD): client control plane: room-code flow, ER/base routing, session key lifecycle, and gameplay state transitions.
+- [`client/fps-boilerplate/README.md`](./client/fps-boilerplate/README.md): active client prototype architecture and runtime notes.
 - [`client/fps-boilerplate/DIGGERS_UNITY6_FIRST_PERSON_CONTROLLER_REFERENCE.md`](./client/fps-boilerplate/DIGGERS_UNITY6_FIRST_PERSON_CONTROLLER_REFERENCE.md): Unity 6 first-person controller parity reference and Three.js port formulas for camera, movement, animation, mining, and shader behavior.
