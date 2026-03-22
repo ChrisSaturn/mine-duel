@@ -4,6 +4,13 @@
 
 @import '../ui/ninepatch.css';
 
+:root {
+  --lobby-max-width: 960px;
+  --lobby-logo-max: 560px;
+  --lobby-panel-max: 560px;
+  --lobby-btn-max: 360px;
+}
+
 /* ── Full-screen mount ────────────────────────────────────────── */
 #lobby {
   position: fixed;
@@ -16,7 +23,9 @@
   background: #070c18;
   font-family: 'Minecraft', monospace;
   image-rendering: pixelated;
-  overflow: hidden;
+  padding: clamp(1rem, 3.5vh, 2.25rem) clamp(0.75rem, 2.5vw, 1.5rem);
+  overflow-x: hidden; /* prevent star-field from causing horizontal scroll */
+  overflow-y: auto;   /* allow vertical scroll on very short screens */
 }
 
 #lobby[hidden] {
@@ -62,15 +71,16 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: clamp(1rem, 4vh, 2rem);
-  padding: 1rem;
+  gap: clamp(1.25rem, 3.8vh, 2.4rem);
+  padding: clamp(0.5rem, 1vw, 1rem);
   width: 100%;
-  max-width: 640px;
+  max-width: var(--lobby-max-width);
 }
 
 /* ── Lobby logo ───────────────────────────────────────────────── */
 .lobby-title-logo {
-  width: min(88vw, 420px);
+  width: min(74vw, var(--lobby-logo-max));
+  max-height: min(22vh, 220px);
   height: auto;
   display: block;
   image-rendering: pixelated;
@@ -78,7 +88,7 @@
 
 /* ── Panel  (np--s0 is the 9-patch tile set) ──────────────────── */
 .lobby-panel {
-  width: min(90vw, 480px);
+  width: min(94vw, var(--lobby-panel-max));
 }
 
 /* Content inside the panel's center cell */
@@ -86,35 +96,41 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: clamp(0.75rem, 2vh, 1.25rem);
-  padding: clamp(0.5rem, 2vw, 1rem) clamp(0.5rem, 3vw, 1.5rem);
+  gap: clamp(0.9rem, 2vh, 1.5rem);
+  padding: clamp(0.85rem, 2.5vw, 1.4rem) clamp(0.9rem, 4vw, 2rem);
   /* min height so the panel doesn't collapse */
-  min-height: calc(var(--np-ts) * 1.5);
+  min-height: calc(var(--np-ts) * 2.1);
 }
 
 /* ── Buttons  (np--s2 / np--s3 are the 9-patch tile sets) ────── */
 .lobby-btn {
   /* Minecraft font on top of 9-patch visuals */
   font-family: 'Minecraft', monospace;
-  font-size: clamp(0.75rem, 2.2vw, 0.95rem);
-  letter-spacing: 0.05em;
+  font-size: clamp(0.82rem, 1.65vw, 1.05rem);
+  letter-spacing: 0.045em;
   text-transform: uppercase;
   color: #fff;
   text-shadow: 1px 1px 0 rgba(0,0,0,0.6);
 
   /* Width so the button spans nicely */
-  width: min(100%, 280px);
+  width: min(100%, var(--lobby-btn-max));
+  min-height: clamp(56px, 8.5vh, 72px);
+  /* Height is determined by the 9-patch grid rows: corner + auto(text) + corner */
+}
 
-  /* Minimum content-area height: 1 tile unit */
-  min-height: calc(var(--np-ts) * 3); /* corners top + label + corners bottom */
+/* ── Fix: button center tiles in s1/s2 are transparent ────────── *
+   Replace them with the opaque fill tile from the panel set (s0)
+   so the panel's tiled background doesn't bleed through.          */
+.lobby-btn .np__mc {
+  background-image: url('/ui/kenney-ui-pack-pixel-adventure/tile_0000/tile_0004.png');
 }
 
 /* ── Status / address text ────────────────────────────────────── */
 .lobby-status {
-  font-size: clamp(0.6rem, 1.8vw, 0.75rem);
+  font-size: clamp(0.68rem, 1.45vw, 0.85rem);
   color: rgba(255, 255, 255, 0.65);
   text-align: center;
-  min-height: 1.2em;
+  min-height: 1.4em;
   margin: 0;
   letter-spacing: 0.03em;
 }
@@ -124,7 +140,7 @@
 }
 
 .lobby-address {
-  font-size: clamp(0.6rem, 1.8vw, 0.75rem);
+  font-size: clamp(0.68rem, 1.45vw, 0.85rem);
   color: #7ddfb8;
   text-align: center;
   margin: 0;

@@ -9,6 +9,7 @@ PROJECT/client/fps-boilerplate/
   public/
     models/
       characters/     # playable + NPC character GLBs
+      maps/           # large imported environment maps (gltf + textures/bin)
       platformer/     # terrain / block GLBs
       props/          # pickups, tools, environment props
     maps/
@@ -31,6 +32,8 @@ PROJECT/client/fps-boilerplate/
    - `public/models/characters/`
    - `public/models/platformer/`
    - `public/models/props/`
+4a. For full third-party model packs that should remain unmodified, mirror the pack under a dedicated vendor path:
+   - `public/models/<vendor-pack>/...` (for example `public/models/cube-world/...`)
 5. If the GLB references external textures (for example `Textures/colormap.png`), copy that texture folder relative to the model path:
    - `public/models/platformer/Textures/colormap.png`
    - `public/models/characters/Textures/colormap.png`
@@ -65,6 +68,8 @@ Each map JSON stores:
 - Runtime loads assets and maps only from `public/` URLs.
 - `src/runtime/mapRuntime.js` owns template mapping, manifest normalization, and world/hitbox application.
 - Template `primitive-plane` is generated in runtime code (no external GLB), and includes a collider volume.
+- Template `cube-world-ground` is also generated in runtime code and builds a contiguous cube-world grass block grid with a dedicated mesh-collider child.
+- Template `demo-scene` loads `/models/maps/demo-scene/Demo.gltf` and injects an explicit `mapCollider` ground volume in runtime.
 - Editor-enabled map authoring outputs JSON compatible with the same runtime loader.
 - Production build must exclude dev editor code paths.
 
@@ -87,5 +92,7 @@ Each map JSON stores:
 - `public/models/platformer/block-grass-corner.glb`
 - `public/models/platformer/Textures/colormap.png`
 - `public/models/characters/Textures/colormap.png`
+- `public/models/cube-world/**` (full `Cube World - Aug 2023` source mirror: `glTF`, `FBX`, `OBJ`, `Blends`, plus `Atlas.png`, `Blocks_PixelArt.png`, and `Preview.jpg`)
+- `public/models/maps/demo-scene/Demo.gltf` (+ `Demo.bin`, `Atlas.jpg`, `colormap.jpg`, `texture-h.jpg`)
 - `public/ui/kenney-ui-pack-pixel-adventure/**`
 - `public/fonts/minecraft.ttf`

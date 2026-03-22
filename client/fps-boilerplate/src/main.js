@@ -20,6 +20,7 @@ const blocker = document.getElementById('blocker');
 const instructions = document.getElementById('instructions');
 const fpsValue = document.getElementById('fps-value');
 const hud = document.getElementById('hud');
+const crosshair = document.getElementById('crosshair');
 const walletSelect = document.getElementById('wallet-select');
 const walletConnectButton = document.getElementById('wallet-connect');
 const walletDisconnectButton = document.getElementById('wallet-disconnect');
@@ -79,8 +80,8 @@ const PLAYER_MODEL_PATH = '/models/characters/kenney-blocky/character-a.glb';
 // Core three.js objects
 // ---------------------------------------------
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x93bee8);
-scene.fog = new THREE.Fog(0x93bee8, 25, 160);
+scene.background = new THREE.Color(0x8ea9c4);
+scene.fog = new THREE.Fog(0x8ea9c4, 34, 240);
 
 const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 400);
 camera.rotation.order = 'YXZ';
@@ -90,9 +91,10 @@ renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.0;
+renderer.toneMappingExposure = 1.04;
 renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFShadowMap;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.shadowMap.autoUpdate = true;
 app.prepend(renderer.domElement);
 
 const playerRig = new THREE.Object3D();
@@ -212,8 +214,40 @@ function setMeshShadowFlags(root, { castShadow, receiveShadow }) {
       return;
     }
 
-    node.castShadow = castShadow;
-    node.receiveShadow = receiveShadow;
+    const materials = Array.isArray(node.material) ? node.material : [node.material];
+    const hasVisibleMaterial = materials.some((material) => {
+      if (!material) {
+        return false;
+      }
+      if (material.transparent && Number(material.opacity) <= 0.02) {
+        return false;
+      }
+      return true;
+    });
+
+    if (!hasVisibleMaterial) {
+      node.castShadow = false;
+      node.receiveShadow = false;
+      return;
+    }
+
+    const forceCastShadow = typeof node.userData.forceCastShadow === 'boolean'
+      ? node.userData.forceCastShadow
+      : null;
+    const forceReceiveShadow = typeof node.userData.forceReceiveShadow === 'boolean'
+      ? node.userData.forceReceiveShadow
+      : null;
+
+    let nextCastShadow = forceCastShadow ?? castShadow;
+    const nextReceiveShadow = forceReceiveShadow ?? receiveShadow;
+
+    if (nextCastShadow && node.geometry?.type === 'PlaneGeometry') {
+      // Thin planes tend to self-shadow into dark artifacts when used as large floors.
+      nextCastShadow = false;
+    }
+
+    node.castShadow = nextCastShadow;
+    node.receiveShadow = nextReceiveShadow;
   });
 }
 
@@ -568,6 +602,7 @@ async function initializeWorld() {
     atmosphereRuntime.dispose();
   }
   atmosphereRuntime = createAtmosphereRuntime({ scene, renderer });
+  atmosphereRuntime.setViewportSize?.(window.innerWidth, window.innerHeight);
   voxelRuntime = createVoxelRuntime({ scene });
 
   try {
@@ -991,7 +1026,11 @@ function isPointerLocked() {
 }
 
 function onPointerLockChange() {
-  blocker.style.display = isPointerLocked() || editorModeEnabled ? 'none' : 'flex';
+  const gameplayActive = isPointerLocked() && !editorModeEnabled;
+  blocker.style.display = gameplayActive || editorModeEnabled ? 'none' : 'flex';
+  if (crosshair) {
+    crosshair.hidden = !gameplayActive;
+  }
 }
 
 function requestPointerLock() {
@@ -1147,6 +1186,9 @@ function onResize() {
   renderer.setSize(width, height);
   if (postProcessRuntime?.setSize) {
     postProcessRuntime.setSize(width, height);
+  }
+  if (atmosphereRuntime?.setViewportSize) {
+    atmosphereRuntime.setViewportSize(width, height);
   }
 
   if (editorBridge?.onResize) {
@@ -1368,7 +1410,7 @@ function animate() {
 
   prevTimeMs = nowMs;
   if (postProcessRuntime?.render) {
-    postProcessRuntime.render(renderCamera);
+    postProcessRuntime.render(renderCamera, { timeSeconds: nowMs * 0.001 });
   } else {
     renderer.render(scene, renderCamera);
   }
@@ -1382,6 +1424,20 @@ async function startGame() {
   }
   postProcessRuntime = createPostProcessRuntime({ renderer, scene, camera });
   postProcessRuntime.setSize(window.innerWidth, window.innerHeight);
+  postProcessRuntime.setPeakStyle?.({
+    saturation: 1.06,
+    contrast: 1.1,
+    warmth: 0.26,
+    shadowLift: 0.058,
+    highlightSoftness: 0.42,
+    blackPoint: 0.045,
+    vignetteStrength: 0.2,
+    vignetteSoftness: 0.6,
+    grainAmount: 0.011,
+    bloomStrength: 0.27,
+    bloomRadius: 0.45,
+    bloomThreshold: 0.87
+  });
   await mountDevEditorIfEnabled();
   resolveGrounding();
   onPointerLockChange();

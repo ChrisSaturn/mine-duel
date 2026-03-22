@@ -4,13 +4,23 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 export const MAP_MANIFEST_VERSION = 1;
 export const DEFAULT_MAP_MANIFEST_PATH = '/maps/default-map.v1.json';
 
+const PRIMITIVE_PLANE_TEMPLATE = 'primitive-plane';
+const CUBE_WORLD_BLOCK_GRASS_TEMPLATE = 'cube-world-block-grass';
+const CUBE_WORLD_GROUND_TEMPLATE = 'cube-world-ground';
+const DEMO_SCENE_TEMPLATE = 'demo-scene';
+const CUBE_WORLD_GROUND_TILES_X = 48;
+const CUBE_WORLD_GROUND_TILES_Z = 48;
+
 const blockyCharacterTemplateEntries = Array.from('abcdefghijklmnopqr').map((letter) => ([
   `blocky-character-${letter}`,
   `/models/characters/kenney-blocky/character-${letter}.glb`
 ]));
 
 export const MODEL_TEMPLATES = {
-  'primitive-plane': '__procedural__/primitive-plane',
+  [PRIMITIVE_PLANE_TEMPLATE]: '__procedural__/primitive-plane',
+  [CUBE_WORLD_BLOCK_GRASS_TEMPLATE]: '/models/cube-world/Blocks/glTF/Block_Grass.gltf',
+  [CUBE_WORLD_GROUND_TEMPLATE]: '__procedural__/cube-world-ground',
+  [DEMO_SCENE_TEMPLATE]: '/models/maps/demo-scene/Demo.gltf',
   'block-grass': '/models/platformer/block-grass.glb',
   'block-grass-low': '/models/platformer/block-grass-low.glb',
   'block-grass-large': '/models/platformer/block-grass-large.glb',
@@ -150,7 +160,7 @@ async function loadSceneTemplate(templateName) {
     throw new Error(`Unknown map template \"${templateName}\".`);
   }
 
-  if (templateName === 'primitive-plane') {
+  if (templateName === PRIMITIVE_PLANE_TEMPLATE) {
     const template = new THREE.Group();
     template.name = 'primitive-plane-template';
 
@@ -161,6 +171,8 @@ async function loadSceneTemplate(templateName) {
     visiblePlane.rotation.x = -Math.PI / 2;
     visiblePlane.position.y = 0.001;
     visiblePlane.name = 'primitive-plane-surface';
+    visiblePlane.userData.forceCastShadow = false;
+    visiblePlane.userData.forceReceiveShadow = true;
     template.add(visiblePlane);
 
     const colliderVolume = new THREE.Mesh(
@@ -169,8 +181,154 @@ async function loadSceneTemplate(templateName) {
     );
     colliderVolume.position.y = -0.1;
     colliderVolume.name = 'primitive-plane-collider';
+    colliderVolume.userData.mapCollider = true;
+    colliderVolume.userData.forceCastShadow = false;
+    colliderVolume.userData.forceReceiveShadow = false;
     template.add(colliderVolume);
 
+    return template;
+  }
+
+  if (templateName === CUBE_WORLD_GROUND_TEMPLATE) {
+    if (templateCache.has(templateName)) {
+      return templateCache.get(templateName);
+    }
+
+    const sourceBlockTemplate = await loadSceneTemplate(CUBE_WORLD_BLOCK_GRASS_TEMPLATE);
+    sourceBlockTemplate.updateMatrixWorld(true);
+
+    let sourceMesh = null;
+    sourceBlockTemplate.traverse((node) => {
+      if (sourceMesh || !node?.isMesh || !node.geometry || !node.material) {
+        return;
+      }
+      sourceMesh = node;
+    });
+
+    if (!sourceMesh) {
+      throw new Error(`Template \"${CUBE_WORLD_BLOCK_GRASS_TEMPLATE}\" has no mesh geometry.`);
+    }
+
+    const sourceMaterial = Array.isArray(sourceMesh.material) ? sourceMesh.material[0] : sourceMesh.material;
+    const cubeGeometry = sourceMesh.geometry.clone();
+    cubeGeometry.computeBoundingBox();
+
+    const bounds = cubeGeometry.boundingBox?.clone();
+    if (!bounds || bounds.isEmpty()) {
+      throw new Error(`Template \"${CUBE_WORLD_BLOCK_GRASS_TEMPLATE}\" has an empty geometry bounds.`);
+    }
+
+    const cubeSize = new THREE.Vector3();
+    bounds.getSize(cubeSize);
+
+    const stepX = Math.max(cubeSize.x, 0.01);
+    const stepZ = Math.max(cubeSize.z, 0.01);
+    const baseY = -bounds.max.y;
+
+    const tileCount = CUBE_WORLD_GROUND_TILES_X * CUBE_WORLD_GROUND_TILES_Z;
+    const cubeInstances = new THREE.InstancedMesh(cubeGeometry, sourceMaterial.clone(), tileCount);
+    cubeInstances.name = 'cube-world-ground-cubes';
+    cubeInstances.castShadow = true;
+    cubeInstances.receiveShadow = true;
+    cubeInstances.frustumCulled = false;
+
+    const minX = -((CUBE_WORLD_GROUND_TILES_X - 1) * stepX) * 0.5;
+    const minZ = -((CUBE_WORLD_GROUND_TILES_Z - 1) * stepZ) * 0.5;
+    const composePosition = new THREE.Vector3();
+    const composeQuaternion = new THREE.Quaternion();
+    const composeScale = new THREE.Vector3();
+    const instanceMatrix = new THREE.Matrix4();
+
+    sourceMesh.matrixWorld.decompose(composePosition, composeQuaternion, composeScale);
+    let instanceIndex = 0;
+    for (let z = 0; z < CUBE_WORLD_GROUND_TILES_Z; z += 1) {
+      for (let x = 0; x < CUBE_WORLD_GROUND_TILES_X; x += 1) {
+        composePosition.set(
+          minX + x * stepX,
+          baseY,
+          minZ + z * stepZ
+        );
+        instanceMatrix.compose(composePosition, composeQuaternion, composeScale);
+        cubeInstances.setMatrixAt(instanceIndex, instanceMatrix);
+        instanceIndex += 1;
+      }
+    }
+    cubeInstances.instanceMatrix.needsUpdate = true;
+    cubeInstances.raycast = () => {};
+
+    const colliderWidth = CUBE_WORLD_GROUND_TILES_X * stepX;
+    const colliderDepth = CUBE_WORLD_GROUND_TILES_Z * stepZ;
+    const colliderHeight = 0.25;
+
+    const groundCollider = new THREE.Mesh(
+      new THREE.BoxGeometry(colliderWidth, colliderHeight, colliderDepth),
+      new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false })
+    );
+    groundCollider.position.y = -colliderHeight * 0.5;
+    groundCollider.name = 'cube-world-ground-mesh-collider';
+    groundCollider.userData.mapCollider = true;
+    groundCollider.userData.forceCastShadow = false;
+    groundCollider.userData.forceReceiveShadow = false;
+
+    const template = new THREE.Group();
+    template.name = 'cube-world-ground-template';
+    template.add(cubeInstances);
+    template.add(groundCollider);
+
+    templateCache.set(templateName, template);
+    return template;
+  }
+
+  if (templateName === DEMO_SCENE_TEMPLATE) {
+    if (templateCache.has(templateName)) {
+      return templateCache.get(templateName);
+    }
+
+    const sceneRoot = await new Promise((resolve, reject) => {
+      gltfLoader.load(
+        modelPath,
+        (gltf) => resolve(gltf.scene),
+        undefined,
+        reject
+      );
+    });
+
+    const template = new THREE.Group();
+    template.name = 'demo-scene-template';
+
+    sceneRoot.name = 'demo-scene-visual';
+    template.add(sceneRoot);
+
+    sceneRoot.updateMatrixWorld(true);
+    const sceneBounds = new THREE.Box3().setFromObject(sceneRoot);
+    if (!sceneBounds.isEmpty()) {
+      const sceneSize = new THREE.Vector3();
+      const sceneCenter = new THREE.Vector3();
+      sceneBounds.getSize(sceneSize);
+      sceneBounds.getCenter(sceneCenter);
+
+      const colliderHeight = 0.6;
+      const groundCollider = new THREE.Mesh(
+        new THREE.BoxGeometry(
+          Math.max(sceneSize.x + 2, 2),
+          colliderHeight,
+          Math.max(sceneSize.z + 2, 2)
+        ),
+        new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false })
+      );
+      groundCollider.position.set(
+        sceneCenter.x,
+        sceneBounds.min.y - colliderHeight * 0.5,
+        sceneCenter.z
+      );
+      groundCollider.name = 'demo-scene-ground-collider';
+      groundCollider.userData.mapCollider = true;
+      groundCollider.userData.forceCastShadow = false;
+      groundCollider.userData.forceReceiveShadow = false;
+      template.add(groundCollider);
+    }
+
+    templateCache.set(templateName, template);
     return template;
   }
 
@@ -197,8 +355,15 @@ function defaultSetMeshShadowFlags(root, { castShadow, receiveShadow }) {
       return;
     }
 
-    node.castShadow = castShadow;
-    node.receiveShadow = receiveShadow;
+    const forceCastShadow = typeof node.userData.forceCastShadow === 'boolean'
+      ? node.userData.forceCastShadow
+      : castShadow;
+    const forceReceiveShadow = typeof node.userData.forceReceiveShadow === 'boolean'
+      ? node.userData.forceReceiveShadow
+      : receiveShadow;
+
+    node.castShadow = forceCastShadow;
+    node.receiveShadow = forceReceiveShadow;
   });
 }
 
@@ -296,6 +461,21 @@ function applyCameraPreset(camera, config, cameraPreset) {
   }
 }
 
+function collectObjectColliders(objectNode) {
+  const explicitColliders = [];
+  objectNode.traverse((node) => {
+    if (node?.userData?.mapCollider === true) {
+      explicitColliders.push(node);
+    }
+  });
+
+  if (explicitColliders.length > 0) {
+    return explicitColliders;
+  }
+
+  return [objectNode];
+}
+
 export async function applyMapData(scene, playerRig, colliders, options = {}) {
   const mapData = normalizeMapData(options.mapData);
   const camera = options.camera ?? null;
@@ -340,7 +520,11 @@ export async function applyMapData(scene, playerRig, colliders, options = {}) {
     setMeshShadowFlags(objectNode, { castShadow: true, receiveShadow: true });
     runtimeState.worldRoot.add(objectNode);
     runtimeState.objectEntries.set(objectEntry.id, objectNode);
-    colliders.push(objectNode);
+
+    const objectColliders = collectObjectColliders(objectNode);
+    for (const colliderNode of objectColliders) {
+      colliders.push(colliderNode);
+    }
   }
 
   applyCameraPreset(camera, config, runtimeState.mapData.cameraPreset);

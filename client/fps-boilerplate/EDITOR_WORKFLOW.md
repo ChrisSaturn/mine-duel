@@ -64,11 +64,11 @@ Mode behavior:
   "version": 1,
   "objects": [
     {
-      "id": "base-plane-001",
-      "template": "primitive-plane",
+      "id": "base-map-demo-scene",
+      "template": "demo-scene",
       "position": [0, 0, 0],
       "rotation": [0, 0, 0],
-      "scale": [260, 1, 260]
+      "scale": [1, 1, 1]
     }
   ],
   "cameraPreset": {
@@ -82,12 +82,12 @@ Mode behavior:
   },
   "hitboxes": [
     {
-      "id": "ground-001",
+      "id": "mine-zone-001",
       "type": "box",
-      "position": [0, -0.5, 0],
+      "position": [0, 7, 0],
       "rotation": [0, 0, 0],
-      "size": [260, 1, 260],
-      "layer": "ground"
+      "size": [24, 14, 24],
+      "layer": "mine-zone"
     },
     {
       "id": "capsule-001",
@@ -96,7 +96,7 @@ Mode behavior:
       "rotation": [0, 0, 0],
       "radius": 0.5,
       "height": 1.2,
-      "attachToObjectId": "tile-001",
+      "attachToObjectId": "base-map-demo-scene",
       "layer": "solid"
     }
   ]
@@ -109,6 +109,7 @@ Mode behavior:
 - `applyMapData(scene, playerRig, colliders, options) -> runtimeState`
 - `mountEditor({ scene, camera, playerRig, colliders, mapData, ... })`
 - `serializeMapData() -> MapData`
+- World-object colliders come from explicit `userData.mapCollider=true` children when present; otherwise object bounds are used as fallback.
 
 ## Production Hardening
 

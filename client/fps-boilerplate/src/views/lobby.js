@@ -41,7 +41,7 @@ export function mountLobby({ walletGateway, onEnterGame }) {
 
       <img
         class="lobby-title-logo"
-        src="/ui/lobby-logo.png"
+        src="/logo.png"
         alt="Mine Duel"
       />
 

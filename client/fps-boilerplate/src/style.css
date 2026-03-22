@@ -152,6 +152,50 @@ canvas {
   color: #d6e9ff;
 }
 
+#crosshair {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  width: 28px;
+  height: 28px;
+  z-index: 40;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.crosshair-line {
+  position: absolute;
+  background: #f6f8fd;
+  box-shadow: 0 0 0 1px rgba(8, 11, 18, 0.85);
+}
+
+.crosshair-line--horizontal {
+  top: 50%;
+  left: 3px;
+  width: 22px;
+  height: 2px;
+  transform: translateY(-50%);
+}
+
+.crosshair-line--vertical {
+  top: 3px;
+  left: 50%;
+  width: 2px;
+  height: 22px;
+  transform: translateX(-50%);
+}
+
+.crosshair-dot {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 4px;
+  height: 4px;
+  transform: translate(-50%, -50%);
+  background: #f6f8fd;
+  box-shadow: 0 0 0 1px rgba(8, 11, 18, 0.85);
+}
+
 @media (max-width: 640px) {
   #hud {
     top: 0.5rem;

@@ -7,18 +7,20 @@ This is the active client prototype in the workspace, not the final production c
 ## Runtime Overview
 
 - World/camera/hitboxes are loaded from `public/maps/default-map.v1.json`.
-- The default map uses a procedural `primitive-plane` base surface (no block tile grid).
+- The default map now uses `demo-scene` (`/models/maps/demo-scene/Demo.gltf`) as the base environment.
 - Runtime map loading + application lives in `src/runtime/mapRuntime.js`.
 - Dev-only editor tooling lives in `src/dev/editorBootstrap.js` and is dynamically imported only in dev mode.
 - Player runtime collision uses a capsule-style body resolver (horizontal body blocking + ground probe snap).
+- Runtime object collision now prefers explicit template colliders (`userData.mapCollider=true`) and falls back to object bounds only when no explicit colliders exist.
 - Runtime + editor player preview default to `Kenney Blocky Characters` (`/models/characters/kenney-blocky/character-a.glb`).
 - Runtime player model uses a slower, larger-range procedural walk-cycle limb animation (arm/leg swing) while moving on ground.
 - Runtime camera is linked to the runtime head node, and both camera pitch + head pitch are driven by the same look state.
 - Runtime camera is pushed forward/up from the head anchor to keep the view facing forward without clipping inside the head mesh.
 - Local runtime player model remains visible during gameplay (including head), while editor mode hides the runtime player model.
-- Atmosphere runtime (`src/runtime/atmosphereRuntime.js`) provides shader-driven sky gradients, moving volumetric-style clouds, a visible sun disk, dynamic fog tinting, and sun-direction updates per frame.
-- Rendering now uses post-processing (`src/runtime/postProcessRuntime.js`) with bloom + FXAA through `EffectComposer` for brighter, shader-pack-style illumination response.
+- Atmosphere runtime (`src/runtime/atmosphereRuntime.js`) now drives a PEAK-inspired sky model (cinematic warm horizon, cool zenith, layered clouds, dynamic sun disc/halo, and per-frame sun/fog/exposure modulation).
+- Rendering now uses post-processing (`src/runtime/postProcessRuntime.js`) with highlight bloom + cinematic color grading + FXAA through `EffectComposer`.
 - Runtime map objects and voxel chunks both cast + receive shadows under the directional sun light.
+- The procedural base ground (`primitive-plane`) is configured as receive-only for shadows to avoid large-floor self-shadow blackouts.
 - Wallet connector runtime (`IC-001`) lives in `src/wallet/walletGateway.js` and is lazy-loaded from HUD wiring in `src/main.js` to keep gameplay bundle weight lower.
 
 ## Wallet Connector (Solana)
@@ -93,20 +95,25 @@ Available only when running with `VITE_ENABLE_EDITOR=1`.
 
 - Displays controls summary
 - Includes a real-time FPS counter
+- Shows a centered Minecraft-style crosshair during active pointer-lock gameplay
 - Uses `Minecraft.ttf` loaded from `public/fonts/minecraft.ttf`
 
 ## Visual Pipeline
 
 - Atmosphere:
-  - Shader sky dome uses layered gradients + procedural cloud noise.
-  - Sun direction animates continuously and drives both sky highlight and directional light placement.
-  - Scene fog/background colors are retinted from sun elevation for a soft day-cycle feel.
+  - Sky dome shader now blends PEAK-style gradients (cool top, warm horizon, deep nadir), layered cloud noise, and a directional sun disk/halo.
+  - Sun direction animates continuously and drives all lighting placement, sky color uniforms, fog tint, and tone-mapping exposure.
+  - Fog near/far and fog color now shift through day/sunset/night palettes for stronger depth separation.
 - Illumination:
-  - Renderer uses ACES tone mapping with physically-correct lights enabled in atmosphere runtime.
-  - Directional sun light is shadow-casting with larger soft-shadow map for outdoor readability.
-  - Hemisphere + ambient fill lights keep shadows stylized instead of fully black.
+  - Renderer now runs `ACESFilmicToneMapping` with physically-correct light behavior and dynamic exposure from atmosphere runtime.
+  - Lighting stack now includes a high-key sun directional light, hemisphere sky fill, ambient fill, and a cool bounce directional fill for PEAK-like stylized contrast.
+  - Sun, ambient, and fill colors/intensities blend in real time across day/sunset/night states for cinematic readability.
+- Shadows:
+  - Directional shadows stay on `PCFSoftShadowMap` but now use tighter PEAK-style tuning (softer penumbra, stronger normal-bias protection, and cleaner acne control).
+  - Shadow frustum scales by viewport and now uses texel-snapped focus anchoring around the player to reduce crawl/shimmer while moving.
+  - Shadow map resolution now scales by viewport class (`4096` desktop / `2048` compact viewport) for cleaner distant silhouettes.
 - Post-processing:
-  - `EffectComposer` render path with `RenderPass`, `UnrealBloomPass`, and `FXAAShader`.
+  - `EffectComposer` render path now uses `RenderPass`, `UnrealBloomPass`, a PEAK grade pass (contrast/saturation/warmth/shadow-lift/vignette/grain), and `FXAAShader`.
   - Post-processing resizes with the viewport and supports both gameplay camera and editor camera.
 
 ## Controller Feature Notes
@@ -122,10 +129,16 @@ Available only when running with `VITE_ENABLE_EDITOR=1`.
 
 - `Kenney Blocky Characters` imported under `public/models/characters/kenney-blocky/`
 - `Kenney UI Pack - Pixel Adventure` imported under `public/ui/kenney-ui-pack-pixel-adventure/`
+- `Cube World - Aug 2023` imported under `public/models/cube-world/` as a full source mirror (`Animals`, `Blocks`, `Characters`, `Enemies`, `Environment`, `Pixel Blocks`, `Tools` with `glTF`, `FBX`, `OBJ`, and `Blends` subfolders)
 - `Minecraft.ttf` imported as `public/fonts/minecraft.ttf`
-- Lobby title logo imported as `public/ui/lobby-logo.png` (source: `references/solana-game-examples-main/seven-seas/unity/.../UI/logo.png`)
+- Lobby view now uses `public/logo.png` as the title/logo art, with responsive sizing caps in `src/views/lobby.css` for desktop/mobile parity
 - `src/runtime/mapRuntime.js` exposes `blocky-character-a` through `blocky-character-r` map templates
-- `src/runtime/mapRuntime.js` also exposes `primitive-plane` for a simple generated base area with collider
+- `src/runtime/mapRuntime.js` also exposes:
+  - `primitive-plane` (legacy simple generated base area)
+  - `cube-world-block-grass` (single cube-world grass block template)
+  - `cube-world-ground` (contiguous cube grid with a dedicated mesh-collider child)
+  - `demo-scene` (imported environment glTF with a runtime-generated ground collider)
+- `client/demo-scene/` is treated as the source asset drop and mirrored into `public/models/maps/demo-scene/` for runtime serving
 
 ## Run
 
